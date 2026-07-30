@@ -1,0 +1,29 @@
+Python virtual environment
+.venv/
+
+Python cache
+pycache/
+.pyc
+
+React dependencies
+frontend/node_modules/
+
+React production build
+frontend/dist/
+
+Local database
+data/.db
+data/.db-journal
+
+Uploaded files
+uploads/
+!uploads/.gitkeep
+
+Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+Operating system files
+.DS_Store
+Thumbs.db
