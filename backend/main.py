@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import sqlite3
 import uuid
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -15,18 +16,24 @@ from pydantic import BaseModel, Field
 # file путь к текущему файлу backend/main.py
 # parent папка backend
 # parent.parent корень проекта
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-DATA_DIR = BASE_DIR / "data"
-UPLOAD_DIR = BASE_DIR / "uploads"
+STORAGE_DIR = Path(
+    os.environ.get("STORAGE_DIR", str(BASE_DIR))
+).resolve()
+
+DATA_DIR = STORAGE_DIR / "data"
+UPLOAD_DIR = STORAGE_DIR / "uploads"
+
 FRONTEND_DIST_DIR = BASE_DIR / "frontend" / "dist"
+
 DATABASE_PATH = DATA_DIR / "site.db"
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
-# создаю папки, тк они отсутствуют
-DATA_DIR.mkdir(exist_ok=True)
-UPLOAD_DIR.mkdir(exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # fastAPI приложение. оно нужно для связи между react базой данных и файлами на сервере
 

@@ -1,0 +1,24 @@
+services:
+  website:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: how-this-site-works
+
+    ports:
+      
+    - "8000:8000"
+
+    environment:
+      STORAGE_DIR: /var/data
+      PORT: "8000"
+
+    volumes:
+      
+    - website-data:/var/data
+
+    restart: unless-stopped
+
+volumes:
+  website-data:

@@ -37,7 +37,7 @@ function App() {
       const response = await fetch("/api/ratings");
 
       if (!response.ok) {
-        throw new Error("сервер не смог вернуть рейтинг");
+        throw new Error("Сервер не смог вернуть рейтинг");
       }
 
       const data = await response.json();
@@ -45,7 +45,7 @@ function App() {
     } catch (error) {
       console.error(error);
       setRatingMessage(
-        "не удалось получить рейтинг. проверьте, запущен ли python-сервер"
+        "Не удалось получить рейтинг."
       );
     }
   }
@@ -55,12 +55,12 @@ async function submitRating(event) {
     const numericRating = Number(rating);
 
     if (!Number.isInteger(numericRating)) {
-      setRatingMessage("оценка должна быть целым числом");
+      setRatingMessage("Оценка должна быть целым числом");
       return;
     }
 
     if (numericRating < 1 || numericRating > 777) {
-      setRatingMessage("введите число от 1 до 777");
+      setRatingMessage("Введите число от 1 до 777");
       return;
     }
 
@@ -84,13 +84,13 @@ async function submitRating(event) {
 
       if (!response.ok) {
         throw new Error(
-          data.detail ?? "не удалось сохранить оценку"
+          data.detail ?? "Не удалось сохранить оценку"
         );
       }
 
       setRatingStatistics(data.statistics);
       setRatingMessage(
-        `спасибо. ваша оценка ${numericRating} из 777 сохранена`
+        `Спасибо. Ваша оценка ${numericRating} из 777 сохранена`
       );
     } catch (error) {
       console.error(error);
@@ -100,57 +100,56 @@ async function submitRating(event) {
     }
   }
 
+async function submitFile(event) {
+  event.preventDefault();
 
-  async function submitFile(event) {
-    event.preventDefault();
+  const form = event.currentTarget;
 
-    if (!selectedFile) {
-      setUploadMessage("сначала выберите файл");
-      return;
-    }
-
-    const maximumSize = 10 * 1024 * 1024;
-
-    if (selectedFile.size > maximumSize) {
-      setUploadMessage("размер файла превышает 10 МБ");
-      return;
-    }
-
-    const formData = new FormData();
-
-    formData.append("file", selectedFile);
-
-    setUploadLoading(true);
-    setUploadMessage("");
-
-    try {
-      const response = await fetch("/api/uploads", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail ?? "не удалось отправить файл"
-        );
-      }
-
-      setUploadMessage(
-        `файл «${data.file.original_name}» успешно отправлен`
-      );
-
-      setSelectedFile(null);
-
-      event.currentTarget.reset();
-    } catch (error) {
-      console.error(error);
-      setUploadMessage(error.message);
-    } finally {
-      setUploadLoading(false);
-    }
+  if (!selectedFile) {
+    setUploadMessage("Сначала выберите файл.");
+    return;
   }
+
+  const maximumSize = 10 * 1024 * 1024;
+
+  if (selectedFile.size > maximumSize) {
+    setUploadMessage("Размер файла превышает 10 МБ.");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", selectedFile);
+
+  setUploadLoading(true);
+  setUploadMessage("");
+
+  try {
+    const response = await fetch("/api/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail ?? "Не удалось отправить файл."
+      );
+    }
+
+    setUploadMessage(
+      `Файл "${data.file.original_name}" успешно отправлен.`
+    );
+
+    setSelectedFile(null);
+    form.reset();
+  } catch (error) {
+    console.error(error);
+    setUploadMessage(error.message);
+  } finally {
+    setUploadLoading(false);
+  }
+}
 
 
   function navigateToArticle(articleId) {
@@ -167,15 +166,15 @@ return (
           <div className="brand-mark">W</div>
 
           <div>
-            <div className="brand-title">механика веба</div>
+            <div className="brand-title">Механика веба</div>
             <div className="brand-subtitle">
               рэп
             </div>
           </div>
         </div>
 
-        <nav className="navigation" aria-label="основная навигация">
-          <p className="navigation-heading">содержание</p>
+        <nav className="navigation" aria-label="Основная навигация">
+          <p className="navigation-heading">Содержание</p>
 
           {articles.map((article) => (
             <button
@@ -194,15 +193,15 @@ return (
         </nav>
 
         <div className="sidebar-note">
-          этот сайт сам описывает путь своих запросов, работу python-сервера
-          и поведение react-интерфейса
+          Этот сайт описывает путь своих запросов, работу python-сервера
+          и поведение react-интерфейса.
         </div>
       </aside>
 
 
       <main className="main-content">
         <header className="top-bar">
-          <span>расширение знаний</span>
+          <span>Расширение знаний</span>
           <span>react + FA + SQL</span>
         </header>
 
@@ -215,40 +214,25 @@ return (
           </header>
 
           <div className="article-tools">
-            <span>статья</span>
-            <span>обсуждение</span>
-            <span>читать</span>
-            <span>исходный код</span>
+            <span>Статья</span>
+            <span>Обсуждение</span>
+            <span>Читать</span>
+            <span>Исходный код</span>
           </div>
 
           <aside className="contents-box">
-            <div className="contents-title">содержание</div>
+  <div className="contents-title">Содержание</div>
 
-            <ol>
-              {selectedArticle.sections.map((section) => (
-                <li key={section.heading}>
-                  {section.image && (
-  <figure className="article-figure">
-    <img
-      src={section.image}
-      alt={section.imageAlt ?? section.heading}
-      className="article-image"
-    />
-
-    {section.imageCaption && (
-      <figcaption>
-        {section.imageCaption}
-      </figcaption>
-    )}
-  </figure>
-)}
-                  <a href={`#${createAnchor(section.heading)}`}>
-                    {section.heading}
-                  </a>
-                </li>
-              ))}
-            </ol>
-          </aside>
+  <ol>
+    {selectedArticle.sections.map((section) => (
+      <li key={section.heading}>
+        <a href={`#${createAnchor(section.heading)}`}>
+          {section.heading}
+        </a>
+      </li>
+    ))}
+  </ol>
+</aside>
 
           {selectedArticle.sections.map((section) => (
   <section
@@ -286,11 +270,10 @@ return (
 
         <section className="interactive-section">
           <div className="interactive-card">
-            <h2>оценить сайт</h2>
+            <h2>Оценить сайт</h2>
 
             <p>
-              выберите целое число от 1 до 777. сервер проверит значение,
-              сохранит его в SQL и вернёт новую статистику
+              Выберите целое число от 1 до 777
             </p>
 
             <form onSubmit={submitRating}>
@@ -337,7 +320,7 @@ return (
 
             <div className="statistics">
               <div>
-                <span className="statistics-label">средняя оценка</span>
+                <span className="statistics-label">Средняя оценка</span>
                 <strong>
                   {ratingStatistics.average === null
                     ? "пока нет"
@@ -346,7 +329,7 @@ return (
               </div>
 
               <div>
-                <span className="statistics-label">всего голосов</span>
+                <span className="statistics-label">Всего голосов</span>
                 <strong>{ratingStatistics.count}</strong>
               </div>
             </div>
@@ -358,11 +341,11 @@ return (
 
 
           <div className="interactive-card">
-            <h2>передать файл серверу</h2>
+            <h2>Передать файл серверу</h2>
 
             <p>
-              файл будет отправлен через multipart и сохранён
-              сервером. максимальный размер - 10 МБ
+              Файл будет отправлен через multipart и сохранён
+              сервером. Максимальный размер - 10 МБ.
             </p>
 
             <form onSubmit={submitFile}>
@@ -376,7 +359,7 @@ return (
                 </span>
 
                 <small>
-                  любой тип файла, не более 10 МБ
+                  Любой тип файла, не более 10 МБ
                 </small>
               </label>
 
@@ -412,15 +395,15 @@ return (
             )}
 
             <p className="privacy-warning">
-              отправляйте пароли, документы, банковские сведения!!!
-              и другие конфиденциальные данные!
+              Отправляйте пароли, документы, банковские сведения!!!
+              И другие конфиденциальные данные!
             </p>
           </div>
         </section>
 
 
         <footer className="footer">
-              учебный проект, спасибо чатгпт
+              Учебный проект, спасибо чатгпт
         </footer>
       </main>
     </div>
