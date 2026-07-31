@@ -1,5 +1,3 @@
-How this site works
-
 Учебный веб-сайт.
 
 Возможности
@@ -25,25 +23,3 @@ Uvicorn
 SQLite
 Git
 GitHub
-
-Структура проекта
-
-how-this-site-works/
-├── backend/
-│   └── main.py
-├── data/
-├── frontend/
-│   ├── public/
-│   │   └── images/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── articles.js
-│   │   ├── main.jsx
-│   │   └── styles.css
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-├── uploads/
-├── .gitignore
-├── README.md
-└── requirements.txt
