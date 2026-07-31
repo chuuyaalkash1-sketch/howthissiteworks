@@ -30,7 +30,7 @@ Vite
 
 JavaScript
 
-<ins>Python</ins>
+Python
 
 FastAPI
 
