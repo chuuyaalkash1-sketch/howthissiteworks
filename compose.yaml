@@ -13,6 +13,7 @@ services:
     environment:
       STORAGE_DIR: /var/data
       PORT: "8000"
+      JWT_SECRET: ${JWT_SECRET}
 
     volumes:
       

@@ -1,3 +1,5 @@
 fastapi
 uvicorn[standard]
 python-multipart
+pyjwt
+pwdlib[argon2]

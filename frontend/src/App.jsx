@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { articles } from "./articles";
 import "./styles.css";
 
-
 function App() {
   const [selectedArticleId, setSelectedArticleId] = useState("overview");
 
@@ -20,6 +19,19 @@ function App() {
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadLoading, setUploadLoading] = useState(false);
 
+  const [authMode, setAuthMode] = useState("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [token, setToken] = useState(
+    () => localStorage.getItem("access_token") ?? ""
+  );
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const [myFiles, setMyFiles] = useState([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+
   const selectedArticle = useMemo(() => {
     return (
       articles.find((article) => article.id === selectedArticleId) ??
@@ -31,25 +43,76 @@ function App() {
     loadRatingStatistics();
   }, []);
 
+  useEffect(() => {
+    if (!token) {
+      setCurrentUser(null);
+      setMyFiles([]);
+      return;
+    }
+
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await readJsonResponse(response);
+        setCurrentUser(data);
+      } catch (error) {
+        console.error(error);
+        localStorage.removeItem("access_token");
+        setToken("");
+        setCurrentUser(null);
+        setMyFiles([]);
+      }
+    }
+
+    loadCurrentUser();
+  }, [token]);
+
+  useEffect(() => {
+    if (currentUser && token) {
+      loadMyFiles();
+    }
+  }, [currentUser, token]);
+
+  async function readJsonResponse(response) {
+    const responseText = await response.text();
+    let data = {};
+
+    if (responseText) {
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        throw new Error(
+          `Сервер ответил с кодом ${response.status}: ${responseText}`
+        );
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        data.detail ?? `Ошибка запроса. HTTP ${response.status}`
+      );
+    }
+
+    return data;
+  }
 
   async function loadRatingStatistics() {
     try {
       const response = await fetch("/api/ratings");
-
-      if (!response.ok) {
-        throw new Error("Сервер не смог вернуть рейтинг");
-      }
-
-      const data = await response.json();
+      const data = await readJsonResponse(response);
       setRatingStatistics(data);
     } catch (error) {
       console.error(error);
-      setRatingMessage(
-        "Не удалось получить рейтинг."
-      );
+      setRatingMessage("Не удалось получить рейтинг");
     }
   }
-async function submitRating(event) {
+
+  async function submitRating(event) {
     event.preventDefault();
 
     const numericRating = Number(rating);
@@ -70,87 +133,249 @@ async function submitRating(event) {
     try {
       const response = await fetch("/api/ratings", {
         method: "POST",
-
         headers: {
           "Content-Type": "application/json",
         },
-
         body: JSON.stringify({
           value: numericRating,
         }),
       });
 
-      const data = await response.json();
+      const data = await readJsonResponse(response);
 
-      if (!response.ok) {
-        throw new Error(
-          data.detail ?? "Не удалось сохранить оценку"
-        );
+      if (data.statistics) {
+        setRatingStatistics(data.statistics);
+      } else {
+        await loadRatingStatistics();
       }
 
-      setRatingStatistics(data.statistics);
       setRatingMessage(
         `Спасибо. Ваша оценка ${numericRating} из 777 сохранена`
       );
     } catch (error) {
       console.error(error);
-      setRatingMessage(error.message);
+      setRatingMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось сохранить оценку"
+      );
     } finally {
       setRatingLoading(false);
     }
   }
 
-async function submitFile(event) {
-  event.preventDefault();
+  async function submitAuth(event) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage("");
 
-  const form = event.currentTarget;
+    const endpoint =
+      authMode === "register"
+        ? "/api/auth/register"
+        : "/api/auth/login";
 
-  if (!selectedFile) {
-    setUploadMessage("Сначала выберите файл.");
-    return;
-  }
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username,
+          password,
+        }),
+      });
 
-  const maximumSize = 10 * 1024 * 1024;
+      const data = await readJsonResponse(response);
 
-  if (selectedFile.size > maximumSize) {
-    setUploadMessage("Размер файла превышает 10 МБ.");
-    return;
-  }
+      localStorage.setItem("access_token", data.access_token);
+      setToken(data.access_token);
+      setCurrentUser(data.user);
+      setUsername("");
+      setPassword("");
 
-  const formData = new FormData();
-  formData.append("file", selectedFile);
-
-  setUploadLoading(true);
-  setUploadMessage("");
-
-  try {
-    const response = await fetch("/api/uploads", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data.detail ?? "Не удалось отправить файл."
+      setAuthMessage(
+        authMode === "register"
+          ? "Аккаунт создан"
+          : "Вы успешно вошли"
       );
+    } catch (error) {
+      console.error(error);
+      setAuthMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось выполнить вход"
+      );
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem("access_token");
+    setToken("");
+    setCurrentUser(null);
+    setMyFiles([]);
+    setSelectedFile(null);
+    setAuthMessage("Вы вышли из аккаунта");
+    setUploadMessage("");
+  }
+
+  async function loadMyFiles() {
+    if (!token) {
+      return;
     }
 
-    setUploadMessage(
-      `Файл "${data.file.original_name}" успешно отправлен.`
-    );
+    setFilesLoading(true);
 
-    setSelectedFile(null);
-    form.reset();
-  } catch (error) {
-    console.error(error);
-    setUploadMessage(error.message);
-  } finally {
-    setUploadLoading(false);
+    try {
+      const response = await fetch("/api/my-files", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await readJsonResponse(response);
+      setMyFiles(data.files ?? []);
+    } catch (error) {
+      console.error(error);
+      setUploadMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить список файлов"
+      );
+    } finally {
+      setFilesLoading(false);
+    }
   }
-}
 
+  async function submitFile(event) {
+    event.preventDefault();
+
+    const form = event.currentTarget;
+
+    if (!currentUser || !token) {
+      setUploadMessage("Сначала войдите в аккаунт");
+      return;
+    }
+
+    if (!selectedFile) {
+      setUploadMessage("Сначала выберите файл");
+      return;
+    }
+
+    const maximumSize = 10 * 1024 * 1024;
+
+    if (selectedFile.size > maximumSize) {
+      setUploadMessage("Размер файла превышает 10 МБ");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    setUploadLoading(true);
+    setUploadMessage("");
+
+    try {
+      const response = await fetch("/api/uploads", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await readJsonResponse(response);
+      const originalName =
+        data.file?.original_name ?? selectedFile.name;
+
+      setUploadMessage(
+        `Файл «${originalName}» успешно отправлен`
+      );
+
+      setSelectedFile(null);
+      form.reset();
+      await loadMyFiles();
+    } catch (error) {
+      console.error(error);
+      setUploadMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось отправить файл"
+      );
+    } finally {
+      setUploadLoading(false);
+    }
+  }
+
+  async function downloadFile(file) {
+    try {
+      const response = await fetch(
+        `/api/my-files/${file.id}/download`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        await readJsonResponse(response);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = objectUrl;
+      link.download = file.original_name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(objectUrl);
+      setUploadMessage(`Файл «${file.original_name}» скачан`);
+    } catch (error) {
+      console.error(error);
+      setUploadMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось скачать файл"
+      );
+    }
+  }
+
+  async function deleteFile(fileId) {
+    const confirmed = window.confirm("Удалить этот файл?");
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/my-files/${fileId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      await readJsonResponse(response);
+      await loadMyFiles();
+      setUploadMessage("Файл удалён");
+    } catch (error) {
+      console.error(error);
+      setUploadMessage(
+        error instanceof Error
+          ? error.message
+          : "Не удалось удалить файл"
+      );
+    }
+  }
 
   function navigateToArticle(articleId) {
     setSelectedArticleId(articleId);
@@ -159,7 +384,8 @@ async function submitFile(event) {
       behavior: "smooth",
     });
   }
-return (
+
+  return (
     <div className="site-layout">
       <aside className="sidebar">
         <div className="brand">
@@ -167,9 +393,7 @@ return (
 
           <div>
             <div className="brand-title">Механика веба</div>
-            <div className="brand-subtitle">
-              рэп
-            </div>
+            <div className="brand-subtitle">рэп</div>
           </div>
         </div>
 
@@ -193,16 +417,14 @@ return (
         </nav>
 
         <div className="sidebar-note">
-          Этот сайт описывает путь своих запросов, работу python-сервера
-          и поведение react-интерфейса.
+          Этот сайт описывает свою работу.
         </div>
       </aside>
-
 
       <main className="main-content">
         <header className="top-bar">
           <span>Расширение знаний</span>
-          <span>react + FA + SQL</span>
+          <span>React + FastAPI + SQLite</span>
         </header>
 
         <article className="article">
@@ -221,64 +443,59 @@ return (
           </div>
 
           <aside className="contents-box">
-  <div className="contents-title">Содержание</div>
+            <div className="contents-title">Содержание</div>
 
-  <ol>
-    {selectedArticle.sections.map((section) => (
-      <li key={section.heading}>
-        <a href={`#${createAnchor(section.heading)}`}>
-          {section.heading}
-        </a>
-      </li>
-    ))}
-  </ol>
-</aside>
+            <ol>
+              {selectedArticle.sections.map((section) => (
+                <li key={section.heading}>
+                  <a href={`#${createAnchor(section.heading)}`}>
+                    {section.heading}
+                  </a>
+                </li>
+              ))}
+            </ol>
+          </aside>
 
           {selectedArticle.sections.map((section) => (
-  <section
-    className="article-section"
-    id={createAnchor(section.heading)}
-    key={section.heading}
-  >
-    <h2>{section.heading}</h2>
+            <section
+              className="article-section"
+              id={createAnchor(section.heading)}
+              key={section.heading}
+            >
+              <h2>{section.heading}</h2>
 
-    {section.image && (
-      <figure className="article-figure">
-        <img
-          src={section.image}
-          alt={section.imageAlt ?? section.heading}
-          className="article-image"
-        />
+              {section.image && (
+                <figure className="article-figure">
+                  <img
+                    src={section.image}
+                    alt={section.imageAlt ?? section.heading}
+                    className="article-image"
+                  />
 
-        {section.imageCaption && (
-          <figcaption>
-            {section.imageCaption}
-          </figcaption>
-        )}
-      </figure>
-    )}
+                  {section.imageCaption && (
+                    <figcaption>{section.imageCaption}</figcaption>
+                  )}
+                </figure>
+              )}
 
-    {section.paragraphs.map((paragraph, index) => (
-      <p key={`${section.heading}-${index}`}>
-        {paragraph}
-      </p>
-    ))}
-  </section>
-))}
+              {section.paragraphs.map((paragraph, index) => (
+                <p key={`${section.heading}-${index}`}>
+                  {paragraph}
+                </p>
+              ))}
+            </section>
+          ))}
         </article>
-
 
         <section className="interactive-section">
           <div className="interactive-card">
             <h2>Оценить сайт</h2>
 
-            <p>
-              Выберите целое число от 1 до 777
-            </p>
+            <p>Выберите целое число от 1 до 777</p>
 
             <form onSubmit={submitRating}>
               <label htmlFor="rating-range">
-                honest reaction: <strong>{rating}</strong>
+                Honest reaction: <strong>{rating}</strong>
               </label>
 
               <input
@@ -287,15 +504,18 @@ return (
                 min="1"
                 max="777"
                 value={rating}
-                onChange={(event) => setRating(Number(event.target.value))}
+                onChange={(event) =>
+                  setRating(Number(event.target.value))
+                }
               />
 
               <div className="range-labels">
                 <span>1</span>
                 <span>777</span>
               </div>
-<label htmlFor="rating-number">
-                точное значение
+
+              <label htmlFor="rating-number">
+                Точное значение
               </label>
 
               <input
@@ -339,56 +559,176 @@ return (
             )}
           </div>
 
+          <div className="interactive-card auth-section">
+            <h2>Личный кабинет</h2>
+
+            {!currentUser ? (
+              <>
+                <div className="auth-switch">
+                  <button
+                    type="button"
+                    className={
+                      authMode === "login"
+                        ? "primary-button"
+                        : ""
+                    }
+                    onClick={() => {
+                      setAuthMode("login");
+                      setAuthMessage("");
+                    }}
+                  >
+                    Вход
+                  </button>
+
+                  <button
+                    type="button"
+                    className={
+                      authMode === "register"
+                        ? "primary-button"
+                        : ""
+                    }
+                    onClick={() => {
+                      setAuthMode("register");
+                      setAuthMessage("");
+                    }}
+                  >
+                    Регистрация
+                  </button>
+                </div>
+
+                <form onSubmit={submitAuth}>
+                  <label htmlFor="auth-username">
+                    Имя пользователя
+                  </label>
+
+                  <input
+                    id="auth-username"
+                    className="number-input"
+                    type="text"
+                    minLength="3"
+                    maxLength="40"
+                    value={username}
+                    required
+                    autoComplete="username"
+                    onChange={(event) =>
+                      setUsername(event.target.value)
+                    }
+                  />
+
+                  <label htmlFor="auth-password">
+                    Пароль
+                  </label>
+
+                  <input
+                    id="auth-password"
+                    className="number-input"
+                    type="password"
+                    minLength="8"
+                    maxLength="128"
+                    value={password}
+                    required
+                    autoComplete={
+                      authMode === "register"
+                        ? "new-password"
+                        : "current-password"
+                    }
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                  />
+
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={authLoading}
+                  >
+                    {authLoading
+                      ? "Подождите…"
+                      : authMode === "register"
+                        ? "Создать аккаунт"
+                        : "Войти"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div>
+                <p>
+                  Вы вошли как{" "}
+                  <strong>{currentUser.username}</strong>
+                </p>
+
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={logout}
+                >
+                  Выйти
+                </button>
+              </div>
+            )}
+
+            {authMessage && (
+              <p className="status-message">{authMessage}</p>
+            )}
+          </div>
 
           <div className="interactive-card">
             <h2>Передать файл серверу</h2>
 
             <p>
               Файл будет отправлен через multipart и сохранён
-              сервером. Максимальный размер - 10 МБ.
+              сервером. Максимальный размер - 10 МБ
             </p>
 
-            <form onSubmit={submitFile}>
-              <label className="file-drop-zone" htmlFor="file-input">
-                <span className="file-icon">⇧</span>
+            {currentUser ? (
+              <form onSubmit={submitFile}>
+                <label
+                  className="file-drop-zone"
+                  htmlFor="file-input"
+                >
+                  <span className="file-icon">⇧</span>
 
-                <span>
-                  {selectedFile
-                    ? selectedFile.name
-                    : "нажмите, чтобы выбрать файл"}
-                </span>
+                  <span>
+                    {selectedFile
+                      ? selectedFile.name
+                      : "Нажмите, чтобы выбрать файл"}
+                  </span>
 
-                <small>
-                  Любой тип файла, не более 10 МБ
-                </small>
-              </label>
+                  <small>Любой тип файла, не более 10 МБ</small>
+                </label>
 
-<input
-                id="file-input"
-                className="hidden-file-input"
-                type="file"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  setSelectedFile(file);
-                  setUploadMessage("");
-                }}
-              />
+                <input
+                  id="file-input"
+                  className="hidden-file-input"
+                  type="file"
+                  onChange={(event) => {
+                    const file =
+                      event.target.files?.[0] ?? null;
+                    setSelectedFile(file);
+                    setUploadMessage("");
+                  }}
+                />
 
-              {selectedFile && (
-                <div className="selected-file">
-                  <span>{selectedFile.name}</span>
-                  <span>{formatBytes(selectedFile.size)}</span>
-                </div>
-              )}
+                {selectedFile && (
+                  <div className="selected-file">
+                    <span>{selectedFile.name}</span>
+                    <span>{formatBytes(selectedFile.size)}</span>
+                  </div>
+                )}
 
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={uploadLoading}
-              >
-                {uploadLoading ? "отправляем…" : "отправить файл"}
-              </button>
-            </form>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={uploadLoading}
+                >
+                  {uploadLoading
+                    ? "Отправляем…"
+                    : "Отправить файл"}
+                </button>
+              </form>
+            ) : (
+              <p>Войдите в аккаунт, чтобы загружать файлы</p>
+            )}
 
             {uploadMessage && (
               <p className="status-message">{uploadMessage}</p>
@@ -399,25 +739,64 @@ return (
               И другие конфиденциальные данные!
             </p>
           </div>
+
+          {currentUser && (
+            <div className="interactive-card my-files">
+              <h2>Мои файлы</h2>
+
+              {filesLoading ? (
+                <p>Загрузка списка…</p>
+              ) : myFiles.length === 0 ? (
+                <p>Вы пока не загрузили ни одного файла</p>
+              ) : (
+                <ul>
+                  {myFiles.map((file) => (
+                    <li key={file.id}>
+                      <span>
+                        <strong>{file.original_name}</strong>
+                        {typeof file.size === "number" && (
+                          <> — {formatBytes(file.size)}</>
+                        )}
+                      </span>
+
+                      <div>
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => downloadFile(file)}
+                        >
+                          Скачать
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => deleteFile(file.id)}
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </section>
 
-
         <footer className="footer">
-              Учебный проект, спасибо чатгпт
+          Учебный проект, спасибо чагпт
         </footer>
       </main>
     </div>
   );
 }
 
-
 function createAnchor(text) {
-return text
+  return text
     .toLowerCase()
     .replaceAll(" ", "-")
     .replaceAll(/[^\p{L}\p{N}-]/gu, "");
 }
-
 
 function formatBytes(bytes) {
   if (bytes === 0) {
@@ -425,11 +804,13 @@ function formatBytes(bytes) {
   }
 
   const units = ["Б", "КБ", "МБ", "ГБ"];
-  const unitIndex = Math.floor(Math.log(bytes) / Math.log(1024));
+  const unitIndex = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1
+  );
   const value = bytes / 1024 ** unitIndex;
 
   return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
-
 
 export default App;
