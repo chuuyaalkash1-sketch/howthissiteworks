@@ -45,10 +45,10 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
 
-if not JWT_SECRET:
-    raise RuntimeError(
-        "Переменная окружения JWT_SECRET не установлена."
-    )
+JWT_SECRET = os.environ.get(
+    "JWT_SECRET",
+    "local-development-secret-change-this-key",
+)
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
