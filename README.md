@@ -1,44 +1,21 @@
-Учебный веб-сайт.
+# 3/S expanded platform
 
-Возможности:
+## Local microservices + ELK
 
-статьи о модели OSI и работе сети;
-
-статья о Python-сервере;
-
-статья о React frontend;
-
-статья о Git и GitHub;
-
-рейтинг сайта по шкале от 1 до 777;
-
-сохранение оценок в SQLite;
-
-загрузка файлов на Python-сервер;
-
-изображения внутри статей;
-
-адаптивный интерфейс.
-
-
-Используемые технологии:
+```powershell
+$env:JWT_SECRET="replace-this-with-a-long-random-value"
+docker compose -f docker-compose.elk.yml build --no-cache
+docker compose -f docker-compose.elk.yml up
 ```
 
-React
+Endpoints:
 
-Vite
+- gateway: http://localhost:8000
+- Elasticsearch: http://localhost:9200
+- Kibana: http://localhost:5601
 
-JavaScript
+In Kibana create a data view for `three-s-events-*` and use `@timestamp` as the time field.
 
-Python
+The frontend source changes are under `frontend/src`. Integrate them into the full Vite project that already contains `articles.js`, `package.json` and public outfit images.
 
-FastAPI
-
-Uvicorn
-
-SQLite
-
-Git
-
-GitHub
-```
+See `docs/ARCHITECTURE.md` for request flow, Docker/Kubernetes internals and production gaps.

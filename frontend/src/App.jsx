@@ -4,15 +4,15 @@ import "./styles.css";
 import WebGLFluid from "./WebGLFluid";
 
 const projects = [
-  { id: 1, title: "Knowledge base: programmer basics", path: "/knowledge", description: "Articles about the site, evaluation, registration, personal files.", accent: "#cfe8dc" },
-  { id: 2, title: "WWM", path: "/shop", description: "List of outfits.", accent: "#f2dfd5" },
-  { id: 3, title: "Set of simulations", path: "/simulations", description: "Ripple, parallax and mouse physics.", accent: "#dedcf2" },
+  { id: 1, title: "Knowledge base", path: "/knowledge", description: "Programmer basics, architecture notes and project documentation.", image: "/project-covers/knowledge.svg", accent: "#cfe8dc" },
+  { id: 2, title: "WWM wardrobe", path: "/shop", description: "A demo storefront with outfits, wishlist, cart and authenticated checkout.", image: "/project-covers/shop.svg", accent: "#f2dfd5" },
+  { id: 3, title: "Simulation lab", path: "/simulations", description: "Parallax, ripple, physics, constellation, kaleidoscope and orbit scenes.", image: "/project-covers/simulations.svg", accent: "#dedcf2" },
 ];
 
 const products = [
   ["青鳞拂雨", "Distinct", 2580, "snake", "An elegant ceremonial outfit with flowing green-blue layers and scale-inspired accents. The silhouette combines calm refinement with a mysterious, water-like mood."],
   ["紫萸香慢", "Base", 60, "flower", "A soft everyday set with floral details and a restrained palette. Light fabrics and delicate ornaments make it suitable for a calm, graceful wanderer style."],
-  ["探梅逢春", "Delicate", 1280, "delicate", "A shadowed warrior set in black and gold, combining layered armor, a high scarf, and ornate details for a sharp, stealth-focused look."],
+  ["探梅逢春", "Delicate", 1280, "delicate", "A spring-inspired costume with fine embroidery and airy layers. The design suggests plum blossoms, renewal and quiet elegance."],
   ["银浦流云", "Resound", 8590, "butterfly", "A luxurious silver-toned ensemble with cloud and butterfly motifs. Long flowing elements create a dramatic effect in movement."],
   ["青锋映雪", "Battlepass", 1520, "current", "A cool battle-ready look built around sharp lines, pale tones and snow-inspired details. It balances practical structure with a refined finish."],
   ["风吟彼岸", "Harmony", 14400, "hands", "A theatrical outfit with layered fabric and expressive accessories. Its composition evokes wind, distant shores and a sense of ritual motion."],
@@ -29,6 +29,51 @@ const products = [
   description,
 }));
 
+function ResilientImage({ sources, alt, className = "", fallbackLabel = "Image unavailable" }) {
+  const list = Array.isArray(sources) ? sources : [sources];
+  const [index, setIndex] = useState(0);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => { setIndex(0); setFailed(false); }, [JSON.stringify(list)]);
+
+  if (failed || !list[index]) {
+    return <div className={`image-fallback ${className}`} role="img" aria-label={alt}><span>{fallbackLabel}</span></div>;
+  }
+
+  return <img className={className} src={list[index]} alt={alt} loading="lazy" onError={() => {
+    if (index < list.length - 1) setIndex((current) => current + 1);
+    else setFailed(true);
+  }} />;
+}
+
+function productSources(image) {
+  return [
+    `/shop/outfits/${image}.png`,
+    `/shop/outfits/${image}.webp`,
+    `/shop/outfits/${image}.jpg`,
+    `/shop/outfits/${image}.jpeg`,
+  ];
+}
+
+function emitBrowserEvent(event, fields = {}) {
+  const payload = {
+    service: "frontend",
+    event,
+    level: "INFO",
+    path: window.location.pathname,
+    href: window.location.href,
+    viewport: `${window.innerWidth}x${window.innerHeight}`,
+    ...fields,
+  };
+
+  fetch("/api/observability/events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
 function useRoute() {
   const [path, setPath] = useState(window.location.pathname);
   useEffect(() => {
@@ -44,11 +89,33 @@ function useRoute() {
   return [path, navigate];
 }
 
+
+function getPageName(path) {
+  if (path.startsWith("/knowledge")) return "knowledge";
+  if (path.startsWith("/shop")) return "shop";
+  if (path.startsWith("/simulations")) return "simulations";
+  if (path.startsWith("/account")) return "account";
+  if (path.startsWith("/files")) return "files";
+  return "home";
+}
+
 function App() {
   const [path, navigate] = useRoute();
   const [cart, setCart] = useState(() => JSON.parse(localStorage.getItem("demo_cart") || "[]"));
   const [wishlist, setWishlist] = useState(() => JSON.parse(localStorage.getItem("demo_wishlist") || "[]"));
   const [authToken, setAuthToken] = useState(() => localStorage.getItem("access_token") || "");
+  const [cartNotice, setCartNotice] = useState(null);
+  const cartNoticeTimer = useRef(null);
+
+  function showCartNotice(product) {
+    window.clearTimeout(cartNoticeTimer.current);
+    setCartNotice(product);
+    cartNoticeTimer.current = window.setTimeout(() => setCartNotice(null), 2400);
+  }
+
+  const pageName = getPageName(path);
+  useEffect(() => () => window.clearTimeout(cartNoticeTimer.current), []);
+
   useEffect(() => {
     const syncAuth = () => setAuthToken(localStorage.getItem("access_token") || "");
     window.addEventListener("storage", syncAuth);
@@ -60,10 +127,64 @@ function App() {
   }, []);
   useEffect(() => localStorage.setItem("demo_cart", JSON.stringify(cart)), [cart]);
   useEffect(() => localStorage.setItem("demo_wishlist", JSON.stringify(wishlist)), [wishlist]);
+
+  useEffect(() => {
+    emitBrowserEvent("route_changed", { route: path, page: pageName });
+  }, [path, pageName]);
+
+  useEffect(() => {
+    const onClick = (event) => {
+      const control = event.target?.closest?.("button, a, [data-track]");
+      if (!control) return;
+      const label = (control.getAttribute("aria-label") || control.dataset.track || control.textContent || control.tagName)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+      emitBrowserEvent("ui_click", {
+        page: getPageName(window.location.pathname),
+        control: label || "control",
+        element: control.tagName.toLowerCase(),
+      });
+    };
+
+    const onSubmit = (event) => {
+      const form = event.target;
+      const formName = form?.dataset?.track || form?.className || form?.getAttribute?.("name") || "form";
+      emitBrowserEvent("form_submit", {
+        page: getPageName(window.location.pathname),
+        form: String(formName).slice(0, 120),
+      });
+    };
+
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("submit", onSubmit, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("submit", onSubmit, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onError = (event) => emitBrowserEvent("browser_error", {
+      level: "ERROR",
+      message: event.message || "Unknown browser error",
+    });
+    const onUnhandled = (event) => emitBrowserEvent("unhandled_rejection", {
+      level: "ERROR",
+      message: String(event.reason || "Unhandled promise rejection"),
+    });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandled);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    };
+  }, []);
+
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell page-${pageName}`} data-page={pageName} data-route={path}>
       <header className="global-header">
         <button className="logo-button" onClick={() => navigate("/")}>3 / S</button>
         <nav className="main-navigation">
@@ -72,8 +193,8 @@ function App() {
           <button onClick={() => navigate("/shop")}>Shop</button>
           <button onClick={() => navigate("/simulations")}>Simulations</button>
           <button onClick={() => navigate("/files")}>Files</button>
-          <button onClick={() => navigate("/shop/wishlist")}>♡ {wishlist.length}</button>
-          <button className="cart-chip" onClick={() => navigate("/shop/cart")}>Cart · {cartCount}</button>
+          {authToken && <button onClick={() => navigate("/shop/wishlist")}>♡ {wishlist.length}</button>}
+          {authToken && <button className="cart-chip" onClick={() => navigate("/shop/cart")}>Cart · {cartCount}</button>}
         </nav>
         <div className="auth-navigation">
           {!authToken ? <>
@@ -86,20 +207,36 @@ function App() {
         </div>
       </header>
 
+      {path === "/" && <ObservabilityStrip currentPath={path} />}
+
       {path === "/" && <Home navigate={navigate} />}
-      {path.startsWith("/knowledge") && <KnowledgeBase />}
+      {path.startsWith("/knowledge") && <KnowledgeBase navigate={navigate} />}
       {path.startsWith("/account") && <AccountPage initialMode={path.endsWith("signup") ? "register" : "login"} onSuccess={() => navigate("/account")} />}
       {path === "/files" && <FileManager />}
       {path === "/shop" && <ShopHome navigate={navigate} />}
-      {path === "/shop/catalog" && <Catalog navigate={navigate} setCart={setCart} wishlist={wishlist} setWishlist={setWishlist} />}
-      {path.startsWith("/shop/product/") && <ProductPage id={Number(path.split("/").pop())} navigate={navigate} setCart={setCart} wishlist={wishlist} setWishlist={setWishlist} />}
-      {path === "/shop/wishlist" && <Wishlist wishlist={wishlist} setWishlist={setWishlist} setCart={setCart} navigate={navigate} />}
-      {path === "/shop/cart" && <Cart cart={cart} setCart={setCart} navigate={navigate} />}
-      {path === "/shop/checkout" && <Checkout cart={cart} setCart={setCart} navigate={navigate} />}
+      {path === "/shop/catalog" && <Catalog navigate={navigate} setCart={setCart} wishlist={wishlist} setWishlist={setWishlist} authToken={authToken} onCartAdded={showCartNotice} />}
+      {path.startsWith("/shop/product/") && <ProductPage id={Number(path.split("/").pop())} navigate={navigate} setCart={setCart} wishlist={wishlist} setWishlist={setWishlist} authToken={authToken} onCartAdded={showCartNotice} />}
+      {path === "/shop/wishlist" && <Wishlist wishlist={wishlist} setWishlist={setWishlist} setCart={setCart} navigate={navigate} authToken={authToken} onCartAdded={showCartNotice} />}
+      {path === "/shop/cart" && <Cart cart={cart} setCart={setCart} navigate={navigate} authToken={authToken} />}
+      {path === "/shop/checkout" && <Checkout cart={cart} setCart={setCart} navigate={navigate} authToken={authToken} />}
       {path === "/simulations" && <SimulationHub navigate={navigate} />}
       {path === "/simulations/ripple" && <RipplePage />}
       {path === "/simulations/parallax" && <ParallaxPage />}
       {path === "/simulations/mouse-physics" && <MousePhysicsPage />}
+      {path === "/simulations/constellation" && <ConstellationPage />}
+      {path === "/simulations/kaleidoscope" && <KaleidoscopePage />}
+      {path === "/simulations/orbits" && <OrbitPage />}
+      {path === "/simulations/fluid-lab" && <FluidLab />}
+
+      {cartNotice && <div className="cart-toast" role="status" aria-live="polite">
+        <div className="cart-toast-icon">✓</div>
+        <div className="cart-toast-copy">
+          <small>ADDED TO CART</small>
+          <strong>{cartNotice.name}</strong>
+          <span>{cartNotice.price} ₽</span>
+        </div>
+        <button type="button" onClick={() => navigate("/shop/cart")}>View cart</button>
+      </div>}
     </div>
   );
 }
@@ -107,21 +244,23 @@ function App() {
 function Home({ navigate }) {
   return <main className="portfolio-home">
     <section className="hero-panel">
-      <p className="eyebrow">3/S - digital collection</p>
-      <h1>Educational project</h1>
-      <p>Knowledge basics, collections, interactive simulations in one space.</p>
+      <p className="eyebrow">3/S · educational collection</p>
+      <h1>Educational project.</h1>
     </section>
-    <section className="project-grid">
-      {projects.map((project) => <button key={project.id} className={`project-card ${project.path ? "ready" : "locked"}`} style={{ "--card-accent": project.accent }} onClick={() => project.path && navigate(project.path)}>
-        <span className="project-number">{String(project.id).padStart(2, "0")}</span>
-        <div><h2>{project.title}</h2><p>{project.description}</p></div>
+    <section className="project-grid project-grid-with-images">
+      {projects.map((project) => <button key={project.id} className="project-card project-card-visual ready" style={{ "--card-accent": project.accent }} onClick={() => navigate(project.path)}>
+        <div className="project-cover">
+          <ResilientImage sources={project.image} alt={`${project.title} preview`} fallbackLabel={project.title} />
+          <span className="project-number">{String(project.id).padStart(2, "0")}</span>
+        </div>
+        <div className="project-copy"><h2>{project.title}</h2><p>{project.description}</p></div>
         <span className="project-arrow">↗</span>
       </button>)}
     </section>
   </main>;
 }
 
-function KnowledgeBase() {
+function KnowledgeBase({ navigate }) {
   const [selectedArticleId, setSelectedArticleId] = useState("overview");
   const [rating, setRating] = useState(389);
   const [statistics, setStatistics] = useState({ count: 0, average: null, minimum: 1, maximum: 777 });
@@ -129,10 +268,10 @@ function KnowledgeBase() {
   const [ratingLoading, setRatingLoading] = useState(false);
   const selectedArticle = useMemo(() => articles.find((article) => article.id === selectedArticleId) ?? articles[0], [selectedArticleId]);
 
-  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Ошибка запроса"); return data; }
-  async function loadRatings() { try { setStatistics(await read(await fetch("/api/ratings"))); } catch { setRatingMessage("Не удалось получить рейтинг."); } }
+  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
+  async function loadRatings() { try { setStatistics(await read(await fetch("/api/ratings"))); } catch { setRatingMessage("Could not load rating statistics."); } }
   useEffect(() => { loadRatings(); }, []);
-  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Введите целое число от 1 до 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Спасибо. Оценка ${value} из 777 сохранена.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
+  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Enter a whole number from 1 to 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Thank you. Your rating of ${value} / 777 was saved.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
 
   return <main className="knowledge-page">
     <div className="knowledge-layout">
@@ -140,8 +279,8 @@ function KnowledgeBase() {
       <article className="knowledge-article"><h1>{selectedArticle.title}</h1><p className="lead">{selectedArticle.description}</p>{selectedArticle.sections.map((section) => <section key={section.heading}><h2>{section.heading}</h2>{section.image && <img src={section.image} alt={section.imageAlt ?? section.heading} />}{section.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</section>)}</article>
     </div>
     <section className="knowledge-tools">
-      <section className="rating-card"><p className="eyebrow">RATE THE SITE</p><h2>honest reaction</h2><form onSubmit={submitRating}><label htmlFor="rating-range">Your rating: <strong>{rating}</strong> / 777</label><input id="rating-range" type="range" min="1" max="777" value={rating} onChange={(e) => setRating(e.target.value)} /><input type="number" min="1" max="777" value={rating} onChange={(e) => setRating(e.target.value)} /><button className="primary" disabled={ratingLoading}>{ratingLoading ? "Saving…" : "Send the rating"}</button></form><div className="rating-stats"><div><span>Average</span><strong>{statistics.average ?? "—"}</strong></div><div><span>Ratings</span><strong>{statistics.count}</strong></div></div>{ratingMessage && <p className="status-message">{ratingMessage}</p>}</section>
-      <div id="files"><FileManager embedded /></div>
+      <section className="rating-card"><p className="eyebrow">RATE THE SITE</p><h2>Site rating</h2><form onSubmit={submitRating}><label htmlFor="rating-range">Your rating: <strong>{rating}</strong> / 777</label><input id="rating-range" type="range" min="1" max="777" value={rating} onChange={(e) => setRating(e.target.value)} /><input type="number" min="1" max="777" value={rating} onChange={(e) => setRating(e.target.value)} /><button className="primary" disabled={ratingLoading}>{ratingLoading ? "Saving..." : "Submit rating"}</button></form><div className="rating-stats"><div><span>Average</span><strong>{statistics.average ?? "—"}</strong></div><div><span>Ratings</span><strong>{statistics.count}</strong></div></div>{ratingMessage && <p className="status-message">{ratingMessage}</p>}</section>
+      <section className="knowledge-file-shortcut"><p className="eyebrow">PERSONAL FILES</p><h2>Upload files</h2><p>File upload is available after sign in.</p><button className="primary" onClick={() => navigate("/files")}>Open file upload</button></section>
     </section>
   </main>;
 }
@@ -155,7 +294,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
   const [message, setMessage] = useState("");
 
   useEffect(() => setMode(initialMode), [initialMode]);
-  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Ошибка запроса"); return data; }
+  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
   useEffect(() => { if (!token) return; fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } }).then(read).then((data) => { setUser(data); }).catch(() => { localStorage.removeItem("access_token"); setToken(""); window.dispatchEvent(new Event("auth-changed")); }); }, [token]);
   async function submitAuth(event) { event.preventDefault(); setMessage(""); try { const data = await read(await fetch(`/api/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })); localStorage.setItem("access_token", data.access_token); setToken(data.access_token); setUser(data.user); window.dispatchEvent(new Event("auth-changed")); onSuccess(); } catch (error) { setMessage(error.message); } }
   function logout() { localStorage.removeItem("access_token"); setToken(""); setUser(null); window.dispatchEvent(new Event("auth-changed")); }
@@ -166,12 +305,12 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
     <section className="art-account-showcase">
       <div className="art-account-overlay">
         <button className="account-brand" onClick={() => window.history.back()}>3 / S</button>
-        <span>Portfolio · E-commerce · Simulations</span>
+        <span>Portfolio · Marketplace · Simulations</span>
       </div>
     </section>
     <section className="art-account-panel">
       {!user ? <div className="auth-card-modern">
-        <div className="auth-card-heading"><p className="eyebrow">PERSONAL ACCOUNT</p><h2>{mode === "login" ? "Sign in to 3 / S" : "Create your account"}</h2><p>{mode === "login" ? "Welcome back." : "Create a profile."}</p></div>
+        <div className="auth-card-heading"><p className="eyebrow">PERSONAL ACCOUNT</p><h2>{mode === "login" ? "Sign in to 3 / S" : "Create your account"}</h2><p>{mode === "login" ? "Welcome back. Enter your details to continue." : "Create a profile to save your activity and manage files."}</p></div>
         <div className="auth-mode-switch"><button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign In</button><button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Sign Up</button></div>
         <form className="modern-auth-form" onSubmit={submitAuth}>
           <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Your username" minLength="3" autoComplete="username" required /></label>
@@ -191,87 +330,401 @@ function FileManager({ embedded = false }) {
   const [token] = useState(() => localStorage.getItem("access_token") || "");
   const [files, setFiles] = useState([]);
   const [message, setMessage] = useState("");
+  const [selectedFileName, setSelectedFileName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Ошибка запроса"); return data; }
-  async function loadFiles() { if (!token) return; try { const data = await read(await fetch("/api/my-files", { headers: { Authorization: `Bearer ${token}` } })); setFiles(data.files || []); } catch (error) { setMessage(error.message); } }
+  async function read(response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || "Request failed");
+    return data;
+  }
+
+  async function loadFiles() {
+    if (!token) return;
+    try {
+      const data = await read(await fetch("/api/my-files", {
+        headers: { Authorization: `Bearer ${token}` },
+      }));
+      setFiles(data.files || []);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
   useEffect(() => { loadFiles(); }, [token]);
-  async function upload(event) { event.preventDefault(); const file = event.currentTarget.elements.file.files[0]; if (!file) return; const form = new FormData(); form.append("file", file); try { await read(await fetch("/api/uploads", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form })); event.currentTarget.reset(); setMessage("Файл загружен."); loadFiles(); } catch (error) { setMessage(error.message); } }
-  async function remove(id) { try { await read(await fetch(`/api/my-files/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } })); loadFiles(); } catch (error) { setMessage(error.message); } }
-  async function download(file) { const response = await fetch(`/api/my-files/${file.id}/download`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok) { setMessage("Не удалось скачать файл."); return; } const blob = await response.blob(); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.original_name; a.click(); URL.revokeObjectURL(a.href); }
+
+  async function upload(event) {
+    event.preventDefault();
+
+    const formElement = event.currentTarget;
+    const inputElement = fileInputRef.current;
+    const file = inputElement?.files?.[0];
+
+    if (!file || uploading) return;
+
+    const body = new FormData();
+    body.append("file", file);
+
+    setUploading(true);
+    setMessage("");
+
+    try {
+      await read(await fetch("/api/uploads", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+      }));
+
+      formElement?.reset();
+      if (inputElement) inputElement.value = "";
+      setSelectedFileName("");
+      setMessage("File uploaded.");
+
+      await loadFiles();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function remove(id) {
+    try {
+      await read(await fetch(`/api/my-files/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }));
+      setMessage("File deleted.");
+      await loadFiles();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function download(file) {
+    try {
+      const response = await fetch(`/api/my-files/${file.id}/download`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Download failed");
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.original_name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
 
   return <section className={embedded ? "embedded-files" : "account-page"}>
     <div className="account-card file-manager-card">
       <p className="eyebrow">MY FILES</p>
       <h1>Upload files</h1>
-      {!token ? <p>First, log in to your personal account, then open this section again.</p> : <>
-        <form className="upload-bar" onSubmit={upload}><input name="file" type="file" required /><button className="primary">Upload a file</button></form>
-        <div className="file-gallery">{files.map((file) => <article key={file.id}><div className="file-preview">{/\.(png|jpe?g|gif|webp)$/i.test(file.original_name) ? "ИЗОБРАЖЕНИЕ" : "ФАЙЛ"}</div><h3>{file.original_name}</h3><p>{Math.round(file.size / 1024)} КБ</p><div><button onClick={() => download(file)}>Скачать</button><button onClick={() => remove(file.id)}>Удалить</button></div></article>)}</div>
-        {!files.length && <p className="empty-files">The files you uploaded will appear here.</p>}
+
+      {!token ? <p>Sign in to upload and manage files.</p> : <>
+        <form className="upload-bar file-upload-form" onSubmit={upload}>
+          <input
+            ref={fileInputRef}
+            id="personal-file-input"
+            name="file"
+            type="file"
+            className="native-file-input"
+            required
+            onChange={(event) => setSelectedFileName(event.target.files?.[0]?.name || "")}
+          />
+
+          <label className="file-picker-button" htmlFor="personal-file-input">
+            Choose file
+          </label>
+
+          <span className={`selected-file-name ${selectedFileName ? "has-file" : ""}`}>
+            {selectedFileName || "No file selected"}
+          </span>
+
+          <button className="primary upload-file-button" disabled={!selectedFileName || uploading}>
+            {uploading ? "Uploading..." : "Upload file"}
+          </button>
+        </form>
+
+        <div className="file-gallery">
+          {files.map((file) => {
+            const isImage = /\.(png|jpe?g|gif|webp)$/i.test(file.original_name);
+            return <article key={file.id} className="file-card">
+              <div className="file-preview">
+                <span>{isImage ? "IMAGE" : "FILE"}</span>
+              </div>
+
+              <h3>{file.original_name}</h3>
+              <p>{Math.max(1, Math.round(file.size / 1024))} KB</p>
+
+              <div className="file-card-actions">
+                <button className="file-action-button" type="button" onClick={() => download(file)}>
+                  Download
+                </button>
+                <button className="file-action-button danger" type="button" onClick={() => remove(file.id)}>
+                  Delete
+                </button>
+              </div>
+            </article>;
+          })}
+        </div>
+
+        {!files.length && <p className="empty-files">Your uploaded files will appear here.</p>}
       </>}
+
       {message && <p className="status-message">{message}</p>}
     </div>
   </section>;
 }
 
-function ShopHome({ navigate }) { return <main className="shop-home"><section className="shop-hero"><div><p className="eyebrow">WWM</p><h1>Wanderer's wardrobe</h1><p>Assemble your wanderer's style.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>View the collection</button></div><div className="hero-silhouette">風</div></section><section className="shop-features"><div><span>01</span><h3>Great variability of outfits</h3><p>A collection of outfits for those who turn the path into their own style.</p></div><div><span>02</span><h3>Save what you love</h3><p>Add to the wishlist and quickly return to the outfits that you've hooked.</p></div><div><span>03</span><h3>Easy choice</h3><p>From inspiration to an order.</p></div></section></main>; }
+function ShopHome({ navigate }) { return <main className="shop-home"><section className="shop-hero"><div><p className="eyebrow">WWM</p><h1>Wardrobe catalog</h1><p>Outfits, wishlist, cart and protected checkout.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>Open catalog</button></div><div className="hero-silhouette">風</div></section><section className="shop-features"><div><span>01</span><h3>Catalog</h3><p>A collection of outfits for those who turn the path into their own style.</p></div><div><span>02</span><h3>Wishlist</h3><p>Add to the wishlist and quickly return to the outfits that you've hooked.</p></div><div><span>03</span><h3>Checkout</h3><p>From inspiration to an order. Orders are available only after sign in.</p></div></section></main>; }
 
-function Catalog({ navigate, setCart, wishlist, setWishlist }) {
-  const [query, setQuery] = useState(""); const [category, setCategory] = useState("Все");
+function Catalog({ navigate, setCart, wishlist, setWishlist, authToken, onCartAdded }) {
+  const [query, setQuery] = useState(""); const [category, setCategory] = useState("All");
   const categories = ["All", ...new Set(products.map((p) => p.category))];
-  const visible = products.filter((p) => (category === "Все" || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase()));
-  const add = (product) => setCart((current) => { const found = current.find((item) => item.id === product.id); return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { ...product, quantity: 1 }]; });
+  const visible = products.filter((p) => (category === "All" || p.category === category) && p.name.toLowerCase().includes(query.toLowerCase()));
+  const add = (product) => { setCart((current) => { const found = current.find((item) => item.id === product.id); return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { ...product, quantity: 1 }]; }); onCartAdded?.(product); };
   const toggleWishlist = (product) => setWishlist((current) => current.some((item) => item.id === product.id) ? current.filter((item) => item.id !== product.id) : [...current, product]);
-  return <main className="catalog-page"><section className="catalog-head"><div><p className="eyebrow">CURATED DIGITAL WARDROBE</p><h1>Outfits that you would want to try on.</h1></div><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Choose your style" /></section><div className="filters">{categories.map((item) => <button className={category === item ? "active" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><section className="product-grid">{visible.map((product) => <article className="product-card" key={product.id}><div className={`product-visual ${product.image}`}><img src={`/shop/outfits/${product.image}.png`} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /><button className="wishlist-button" aria-label="Add to favorites" onClick={() => toggleWishlist(product)}>{wishlist.some((item) => item.id === product.id) ? "♥" : "♡"}</button><button className="product-open" onClick={() => navigate(`/shop/product/${product.id}`)}><span>{product.name}</span></button></div><div className="product-meta"><div><p>{product.category}</p><h2>{product.name}</h2></div><strong>{product.price} ₽</strong></div><button className="add-button" onClick={() => add(product)}>Add to cart</button></article>)}</section><p className="legal-note">Demo educational fan project.</p></main>;
+  return <main className="catalog-page"><section className="catalog-head"><div><p className="eyebrow">WARDROBE</p><h1>Outfit catalog</h1></div><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search outfits" /></section><div className="filters">{categories.map((item) => <button className={category === item ? "active" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><section className="product-grid">{visible.map((product) => <article className="product-card" key={product.id}><div className={`product-visual ${product.image}`}><ResilientImage sources={productSources(product.image)} alt={product.name} className="product-card-image" fallbackLabel={product.name} /><button className="wishlist-button" aria-label="Add to favorites" onClick={() => toggleWishlist(product)}>{wishlist.some((item) => item.id === product.id) ? "♥" : "♡"}</button><button className="product-open" onClick={() => navigate(`/shop/product/${product.id}`)}><span>{product.name}</span></button></div><div className="product-meta"><div><p>{product.category}</p><h2>{product.name}</h2></div><strong>{product.price} ₽</strong></div>{authToken && <button className="add-button" onClick={() => add(product)}>Add to cart</button>}</article>)}</section></main>;
 }
 
-function ProductPage({ id, navigate, setCart, wishlist, setWishlist }) { const product = products.find((p) => p.id === id) || products[0]; const add = () => setCart((current) => { const found = current.find((item) => item.id === product.id); return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { ...product, quantity: 1 }]; }); const wished = wishlist.some((item) => item.id === product.id); const toggleWishlist = () => setWishlist((current) => wished ? current.filter((item) => item.id !== product.id) : [...current, product]); return <main className="product-page"><div className="product-detail-visual"> <img src={`/shop/outfits/${product.image}.png`} alt={product.name} className="product-detail-full-image" /><span>{product.name}</span></div><section><p className="eyebrow">{product.category}</p><h1>{product.name}</h1><p className="product-price">{product.price} ₽</p><p>{product.description}</p><label>Option<select><option>Original</option><option>Dark</option><option>Light</option></select></label><button className="primary" onClick={add}>Add to cart</button><button className="soft-button" onClick={toggleWishlist}>{wished ? "♥ Favorites" : "♡ To wishlist"}</button><button onClick={() => navigate("/shop/catalog")}>Back to catalog</button></section></main>; }
+function ProductPage({ id, navigate, setCart, wishlist, setWishlist, authToken, onCartAdded }) {
+  const product = products.find((item) => item.id === id) || products[0];
+  const wished = wishlist.some((item) => item.id === product.id);
 
-function Wishlist({ wishlist, setWishlist, setCart, navigate }) { const add = (product) => setCart((current) => { const found = current.find((item) => item.id === product.id); return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { ...product, quantity: 1 }]; }); return <main className="catalog-page"><section className="catalog-head"><div><p className="eyebrow">WISHLIST</p><h1>Selected outfits.</h1></div></section>{wishlist.length === 0 ? <section className="empty-state"><h2>Wishlist is empty.</h2><p>Click on the heart in the catalog to save your favorites.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>Go to the catalog</button></section> : <section className="product-grid wishlist-grid">{wishlist.map((product) => <article className="product-card" key={product.id}><div className={`product-visual ${product.image}`}><img src={`/shop/outfits/${product.image}.png`} alt={product.name} onError={(event) => { event.currentTarget.style.display = "none"; }} /><button className="wishlist-button" onClick={() => setWishlist((current) => current.filter((item) => item.id !== product.id))}>♥</button><button className="product-open" onClick={() => navigate(`/shop/product/${product.id}`)}><span>{product.name}</span></button></div><div className="product-meta"><div><p>{product.category}</p><h2>{product.name}</h2></div><strong>{product.price} ₽</strong></div><button className="add-button" onClick={() => add(product)}>Add to cart</button></article>)}</section>}</main>; }
+  const add = () => {
+    setCart((current) => {
+      const found = current.find((item) => item.id === product.id);
+      return found
+        ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item)
+        : [...current, { ...product, quantity: 1 }];
+    });
+    onCartAdded?.(product);
+  };
 
-function Cart({ cart, setCart, navigate }) { const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0); return <main className="cart-page"><h1>Cart</h1>{cart.length === 0 ? <p>Cart is empty.</p> : <>{cart.map((item) => <article key={item.id}><div className={`cart-thumb ${item.image}`} /><div><h2>{item.name}</h2><p>{item.price} ₽</p></div><input type="number" min="1" value={item.quantity} onChange={(e) => setCart((current) => current.map((entry) => entry.id === item.id ? { ...entry, quantity: Number(e.target.value) } : entry))} /><button onClick={() => setCart((current) => current.filter((entry) => entry.id !== item.id))}>Delete</button></article>)}<div className="cart-total"><span>Total:</span><strong>{total} ₽</strong></div><button className="primary" onClick={() => navigate("/shop/checkout")}>Place an order</button></>}</main>; }
+  const toggleWishlist = () => setWishlist((current) =>
+    wished ? current.filter((item) => item.id !== product.id) : [...current, product]
+  );
 
-function Checkout({ cart, setCart, navigate }) {
+  return <main className="product-page">
+    <div className="product-detail-visual">
+      <ResilientImage sources={productSources(product.image)} alt={product.name} className="product-detail-full-image" fallbackLabel={product.name} />
+      <span>{product.name}</span>
+    </div>
+    <section>
+      <p className="eyebrow">{product.category}</p>
+      <h1>{product.name}</h1>
+      <p className="product-price">{product.price} ₽</p>
+      <p>{product.description}</p>
+      <label>Option<select><option>Original</option><option>Dark</option><option>Light</option></select></label>
+      {authToken && <button className="primary" onClick={add}>Add to cart</button>}
+      <button className="soft-button" onClick={toggleWishlist}>{wished ? "♥ Favorites" : "♡ To wishlist"}</button>
+      <button className="secondary-button" onClick={() => navigate("/shop/catalog")}>Back to catalog</button>
+    </section>
+  </main>;
+}
+
+function Wishlist({ wishlist, setWishlist, setCart, navigate, authToken, onCartAdded }) { const add = (product) => { setCart((current) => { const found = current.find((item) => item.id === product.id); return found ? current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item) : [...current, { ...product, quantity: 1 }]; }); onCartAdded?.(product); }; return <main className="catalog-page"><section className="catalog-head"><div><p className="eyebrow">WISHLIST</p><h1>Selected outfits.</h1></div></section>{wishlist.length === 0 ? <section className="empty-state"><h2>Wishlist is empty.</h2><p>Click on the heart in the catalog to save your favorites.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>Go to the catalog</button></section> : <section className="product-grid wishlist-grid">{wishlist.map((product) => <article className="product-card" key={product.id}><div className={`product-visual ${product.image}`}><ResilientImage sources={productSources(product.image)} alt={product.name} className="product-card-image" fallbackLabel={product.name} /><button className="wishlist-button" onClick={() => setWishlist((current) => current.filter((item) => item.id !== product.id))}>♥</button><button className="product-open" onClick={() => navigate(`/shop/product/${product.id}`)}><span>{product.name}</span></button></div><div className="product-meta"><div><p>{product.category}</p><h2>{product.name}</h2></div><strong>{product.price} ₽</strong></div>{authToken && <button className="add-button" onClick={() => add(product)}>Add to cart</button>}</article>)}</section>}</main>; }
+
+function Cart({ cart, setCart, navigate, authToken }) { const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0); return <main className="cart-page"><h1>Cart</h1>{cart.length === 0 ? <p>Cart is empty.</p> : <>{cart.map((item) => <article key={item.id}><div className={`cart-thumb ${item.image}`}><ResilientImage sources={productSources(item.image)} alt={item.name} fallbackLabel={item.name} /></div><div><h2>{item.name}</h2><p>{item.price} ₽</p></div><input type="number" min="1" value={item.quantity} onChange={(e) => setCart((current) => current.map((entry) => entry.id === item.id ? { ...entry, quantity: Number(e.target.value) } : entry))} /><button className="secondary-button" onClick={() => setCart((current) => current.filter((entry) => entry.id !== item.id))}>Delete</button></article>)}<div className="cart-total"><span>Total:</span><strong>{total} ₽</strong></div>{authToken && <button className="primary" onClick={() => navigate("/shop/checkout")}>Place an order</button>}</>}</main>; }
+
+function Checkout({ cart, setCart, navigate, authToken }) {
   const [processing, setProcessing] = useState(false);
   const [done, setDone] = useState(false);
+  const [orderId, setOrderId] = useState("");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!processing) return undefined;
-    const timer = window.setTimeout(() => {
-      setCart([]);
+  if (!authToken) return <main className="checkout-page"><section className="auth-required"><p className="eyebrow">ACCOUNT REQUIRED</p><h1>Sign in to continue</h1><p>Checkout is available only for registered users.</p><button className="primary" onClick={() => navigate("/account/signin")}>Sign In</button></section></main>;
+
+  async function submitOrder(event) {
+    event.preventDefault();
+    if (!cart.length || processing) return;
+    setError("");
+    setProcessing(true);
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    try {
+      const response = await fetch("/api/commerce/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ items: cart, total }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || "Order service is unavailable.");
+      setOrderId(data.order_id || "accepted");
+      window.setTimeout(() => { setCart([]); setProcessing(false); setDone(true); }, 2600);
+    } catch (requestError) {
       setProcessing(false);
-      setDone(true);
-    }, 6500);
-    return () => window.clearTimeout(timer);
-  }, [processing, setCart]);
-
-  if (done) {
-    return <main className="checkout-page checkout-success"><h1>The order has been placed</h1><p>хаха наебал ты не уплотиш это все уловки ловушка</p><button className="primary" onClick={() => navigate("/")}>Go to the main page</button></main>;
+      setError(requestError.message);
+    }
   }
 
-  if (processing) {
-    return <main className="checkout-page payment-loading-page">
-      <section className="payment-loading-card">
-        <div className="payment-loading-copy">
-          <p className="eyebrow">SECURE PAYMENT</p>
-          <h1>Processing your order</h1>
-          <p>Move the cursor through the smoke while the payment window is loading.</p>
-          <div className="payment-progress"><span /></div>
-        </div>
-        <div className="payment-fluid-window"><WebGLFluid compact /></div>
-      </section>
-    </main>;
-  }
+  if (done) return <main className="checkout-page checkout-success"><section className="checkout-result-card"><p className="eyebrow">ORDER ACCEPTED</p><h1>The order has been placed</h1><p>Order ID: <strong>{orderId}</strong></p><button className="primary" onClick={() => navigate("/")}>Go to the main page</button></section></main>;
 
-  return <main className="checkout-page"><h1>Making an order</h1><form onSubmit={(event) => { event.preventDefault(); setProcessing(true); }}><input placeholder="Name" required /><input type="email" placeholder="Email" required /><input placeholder="Promo code" /><button className="primary" disabled={!cart.length}>Confirm the order</button></form></main>;
+  if (processing) return <main className="payment-loading-page">
+    <div className="payment-smoke-background"><WebGLFluid compact quality="high" /></div>
+    <section className="payment-loading-card"><div className="payment-loading-copy"><p className="eyebrow">ORDER PROCESSING</p><h1>Processing your order</h1><p>The order is being validated.</p><div className="payment-progress"><span /></div></div></section>
+  </main>;
+
+  return <main className="checkout-page"><h1>Making an order</h1><form onSubmit={submitOrder}><input placeholder="Name" required /><input type="email" placeholder="Email" required /><input placeholder="Promo code" />{error && <p className="message">{error}</p>}<button className="primary" disabled={!cart.length || processing}>Confirm the order</button></form></main>;
 }
 
-function SimulationHub({ navigate }) { const sims = [["Ripple", "/simulations/ripple", "Waves from movement and clicks"], ["Parallax", "/simulations/parallax", "Layer depth and cursor movement"], ["Mouse Physics", "/simulations/mouse-physics", "Springy objects"]]; return <main className="sim-hub"><p className="eyebrow">LAB / INTERACTION</p><h1>Set of simulations</h1><section>{sims.map(([name, route, text], index) => <button key={name} onClick={() => navigate(route)}><span>0{index + 1}</span><div><h2>{name}</h2><p>{text}</p></div><b>↗</b></button>)}</section></main>; }
+function SimulationHub({ navigate }) {
+  const sims = [
+    ["Ripple", "/simulations/ripple", "Waves that bloom from every movement"],
+    ["Parallax Garden", "/simulations/parallax", "A layered luminous scene that follows your cursor"],
+    ["Mouse Physics", "/simulations/mouse-physics", "Springy objects with momentum"],
+    ["Constellation", "/simulations/constellation", "Connect a living field of stars"],
+    ["Kaleidoscope", "/simulations/kaleidoscope", "Paint mirrored light patterns"],
+    ["Orbit Playground", "/simulations/orbits", "Pull planets into changing paths"],
+    ["Fluid Lab", "/simulations/fluid-lab", "WebGL smoke with adjustable brightness, force, swirl and lifetime"],
+      ];
+  return <main className="sim-hub"><p className="eyebrow">LAB / INTERACTION</p><h1>Interactive simulations</h1><section>{sims.map(([name, route, text], index) => <button key={name} onClick={() => navigate(route)}><span>{String(index + 1).padStart(2, "0")}</span><div><h2>{name}</h2><p>{text}</p></div><b>↗</b></button>)}</section></main>;
+}
 
-function RipplePage() { const [ripples, setRipples] = useState([]); const add = (e) => { const rect = e.currentTarget.getBoundingClientRect(); const ripple = { id: Date.now(), x: e.clientX - rect.left, y: e.clientY - rect.top }; setRipples((r) => [...r.slice(-12), ripple]); }; return <main className="effect-page ripple-stage" onPointerMove={add} onPointerDown={add}><div><p className="eyebrow">RIPPLE</p><h1>Move the mouse</h1></div>{ripples.map((r) => <span key={r.id} style={{ left: r.x, top: r.y }} />)}</main>; }
+function RipplePage() { const [ripples, setRipples] = useState([]); const add = (e) => { const rect = e.currentTarget.getBoundingClientRect(); const ripple = { id: `${Date.now()}-${Math.random()}`, x: e.clientX - rect.left, y: e.clientY - rect.top }; setRipples((r) => [...r.slice(-18), ripple]); }; return <main className="effect-page ripple-stage" onPointerMove={add} onPointerDown={add}><div><p className="eyebrow">RIPPLE</p><h1>Move the mouse</h1></div>{ripples.map((r) => <span key={r.id} style={{ left: r.x, top: r.y }} />)}</main>; }
 
-function ParallaxPage() { const ref = useRef(null); const move = (e) => { const rect = ref.current.getBoundingClientRect(); const x = (e.clientX - rect.left) / rect.width - .5; const y = (e.clientY - rect.top) / rect.height - .5; ref.current.style.setProperty("--mx", x); ref.current.style.setProperty("--my", y); }; return <main className="effect-page parallax-stage" ref={ref} onPointerMove={move}><div className="parallax-layer layer-one">PARALLAX</div><div className="parallax-layer layer-two">MOVE</div><div className="parallax-layer layer-three">CURSOR</div></main>; }
+function ParallaxPage() {
+  const ref = useRef(null);
+  const move = (e) => { const rect = ref.current.getBoundingClientRect(); const x = (e.clientX - rect.left) / rect.width - .5; const y = (e.clientY - rect.top) / rect.height - .5; ref.current.style.setProperty("--mx", x); ref.current.style.setProperty("--my", y); };
+  return <main className="effect-page parallax-stage" ref={ref} onPointerMove={move} onPointerLeave={() => { ref.current.style.setProperty("--mx", 0); ref.current.style.setProperty("--my", 0); }}>
+    <div className="parallax-aurora aurora-a" /><div className="parallax-aurora aurora-b" />
+    <div className="parallax-stars">{Array.from({ length: 34 }, (_, i) => <i key={i} style={{ "--x": `${(i * 37) % 100}%`, "--y": `${(i * 61) % 100}%`, "--d": `${20 + (i % 7) * 10}px` }} />)}</div>
+    <div className="parallax-card card-back"><span>DEPTH</span></div>
+    <div className="parallax-card card-mid"><span>LIGHT</span></div>
+    <div className="parallax-card card-front"><p className="eyebrow">PARALLAX GARDEN</p><h1>Follow the light</h1><p>Move slowly. Every layer responds at a different depth.</p></div>
+  </main>;
+}
 
 function MousePhysicsPage() { const [target, setTarget] = useState({ x: innerWidth / 2, y: innerHeight / 2 }); const [pos, setPos] = useState(target); useEffect(() => { let frame; let current = { ...pos }; let velocity = { x: 0, y: 0 }; const tick = () => { velocity.x += (target.x - current.x) * .025; velocity.y += (target.y - current.y) * .025; velocity.x *= .82; velocity.y *= .82; current.x += velocity.x; current.y += velocity.y; setPos({ ...current }); frame = requestAnimationFrame(tick); }; tick(); return () => cancelAnimationFrame(frame); }, [target]); return <main className="effect-page physics-stage" onPointerMove={(e) => setTarget({ x: e.clientX, y: e.clientY })}><h1>ДЭНЧИК</h1><div className="physics-ball" style={{ transform: `translate(${pos.x - 45}px, ${pos.y - 90}px)` }} /></main>; }
+
+function ConstellationPage() {
+  const canvasRef = useRef(null);
+  useEffect(() => { const canvas = canvasRef.current, ctx = canvas.getContext("2d"); let frame; const pointer={x:-9999,y:-9999}; const stars=Array.from({length:90},()=>({x:Math.random(),y:Math.random(),vx:(Math.random()-.5)*.0004,vy:(Math.random()-.5)*.0004})); const resize=()=>{const d=Math.min(devicePixelRatio||1,2); canvas.width=innerWidth*d; canvas.height=(innerHeight-72)*d; canvas.style.width=innerWidth+'px'; canvas.style.height=(innerHeight-72)+'px'; ctx.setTransform(d,0,0,d,0,0)}; const move=e=>{const r=canvas.getBoundingClientRect();pointer.x=e.clientX-r.left;pointer.y=e.clientY-r.top}; const draw=()=>{const w=canvas.clientWidth,h=canvas.clientHeight;ctx.fillStyle='rgba(3,18,12,.2)';ctx.fillRect(0,0,w,h);stars.forEach(a=>{a.x=(a.x+a.vx+1)%1;a.y=(a.y+a.vy+1)%1;const x=a.x*w,y=a.y*h;const dx=pointer.x-x,dy=pointer.y-y,dist=Math.hypot(dx,dy);if(dist<180){ctx.strokeStyle=`rgba(170,255,210,${1-dist/180})`;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(pointer.x,pointer.y);ctx.stroke()}ctx.fillStyle='#d9ffe8';ctx.beginPath();ctx.arc(x,y,1.6,0,Math.PI*2);ctx.fill()});frame=requestAnimationFrame(draw)}; resize();canvas.addEventListener('pointermove',move);window.addEventListener('resize',resize);draw();return()=>{cancelAnimationFrame(frame);canvas.removeEventListener('pointermove',move);window.removeEventListener('resize',resize)}} ,[]);
+  return <main className="canvas-sim"><canvas ref={canvasRef}/><div className="sim-caption"><p className="eyebrow">CONSTELLATION</p><h1>Connect the field</h1></div></main>;
+}
+
+function KaleidoscopePage() {
+  const canvasRef=useRef(null);
+  useEffect(()=>{const c=canvasRef.current,ctx=c.getContext('2d');let hue=120;const resize=()=>{const d=Math.min(devicePixelRatio||1,2);c.width=innerWidth*d;c.height=(innerHeight-72)*d;c.style.width=innerWidth+'px';c.style.height=(innerHeight-72)+'px';ctx.setTransform(d,0,0,d,0,0)};const draw=e=>{const r=c.getBoundingClientRect(),x=e.clientX-r.left-r.width/2,y=e.clientY-r.top-r.height/2;hue=(hue+2)%360;for(let i=0;i<12;i++){ctx.save();ctx.translate(r.width/2,r.height/2);ctx.rotate(i*Math.PI/6);if(i%2)ctx.scale(-1,1);ctx.fillStyle=`hsla(${hue+i*8},75%,70%,.12)`;ctx.beginPath();ctx.arc(x,y,18+Math.abs(x+y)%55,0,Math.PI*2);ctx.fill();ctx.restore()}};resize();c.addEventListener('pointermove',draw);window.addEventListener('resize',resize);return()=>{c.removeEventListener('pointermove',draw);window.removeEventListener('resize',resize)}},[]);
+  return <main className="canvas-sim kaleidoscope-sim"><canvas ref={canvasRef}/><div className="sim-caption"><p className="eyebrow">KALEIDOSCOPE</p><h1>Paint mirrored light</h1></div></main>;
+}
+
+function OrbitPage(){const ref=useRef(null);const [pull,setPull]=useState({x:50,y:50});return <main className="orbit-stage" ref={ref} onPointerMove={e=>{const r=ref.current.getBoundingClientRect();setPull({x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100})}} style={{"--px":`${pull.x}%`,"--py":`${pull.y}%`}}><div className="orbit-core"/>{Array.from({length:6},(_,i)=><div className={`orbit-ring orbit-${i+1}`} key={i}><span/></div>)}<div className="sim-caption"><p className="eyebrow">ORBIT PLAYGROUND</p><h1>Bend the paths</h1></div></main>}
+
+function FluidLab() {
+  return <main className="fluid-lab-standalone">
+    <WebGLFluid quality="high" />
+  </main>;
+}
+
+
+function displayValue(value, fallback = "") {
+  if (value == null) return fallback;
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (Array.isArray(value)) return value.map((item) => displayValue(item)).join(", ");
+  if (typeof value === "object") {
+    if ("original" in value) return displayValue(value.original, fallback);
+    if ("name" in value) return displayValue(value.name, fallback);
+    if ("value" in value) return displayValue(value.value, fallback);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(value);
+}
+
+function ObservabilityStrip({ currentPath }) {
+  const [events, setEvents] = useState([]);
+  const [health, setHealth] = useState({});
+  const [stack, setStack] = useState({});
+  const [expanded, setExpanded] = useState(false);
+  const [showHow, setShowHow] = useState(false);
+  const [state, setState] = useState("connecting");
+  const services = ["gateway", "auth", "commerce", "content", "files", "observability"];
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const [eventsResponse, healthResponse, stackResponse] = await Promise.all([
+          fetch("/api/observability/events?limit=18", { cache: "no-store" }),
+          fetch("/api/observability/health", { cache: "no-store" }),
+          fetch("/api/observability/stack-health", { cache: "no-store" }),
+        ]);
+        if (!eventsResponse.ok || !healthResponse.ok) throw new Error("observability unavailable");
+        const eventData = await eventsResponse.json();
+        const healthData = await healthResponse.json();
+        const stackData = stackResponse.ok ? await stackResponse.json() : {};
+        if (!alive) return;
+        setEvents(eventData.events || []);
+        setHealth(healthData || {});
+        setStack(stackData || {});
+        setState("online");
+      } catch {
+        if (alive) setState("offline");
+      }
+    };
+    load();
+    const timer = window.setInterval(load, 2500);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [currentPath]);
+
+  const online = services.filter((name) => health[name] === "online").length;
+  const latest = events[0];
+
+  return <section className={`obs-rail ${expanded ? "is-expanded" : ""}`} aria-label="Educational observability panel">
+    <div className="obs-rail-main">
+      <div className="obs-rail-title">
+        <span className="obs-live-dot" />
+        <div><small>EDUCATIONAL PROJECT · LIVE ELK</small><strong>Observability</strong></div>
+      </div>
+
+      <div className="obs-rail-metric"><small>ROUTE</small><strong>{currentPath}</strong></div>
+      <div className="obs-rail-metric"><small>SERVICES</small><strong>{online}/{services.length}</strong></div>
+      <div className="obs-rail-metric"><small>ELASTICSEARCH</small><strong>{displayValue(stack.elasticsearch, "checking")}</strong></div>
+      <div className="obs-rail-metric obs-latest"><small>LATEST EVENT</small><strong>{displayValue(latest?.event, state === "offline" ? "collector offline" : "waiting for activity")}</strong><span>{displayValue(latest?.service, "frontend")}</span></div>
+
+      <button className="obs-expand-button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide logs" : "Live logs"}</button>
+      <button className="obs-how-button" onClick={() => setShowHow((value) => !value)}>{showHow ? "Hide info" : "How it works"}</button>
+      <a className="obs-kibana-button" href="http://localhost:5601" target="_blank" rel="noreferrer">Kibana ↗</a>
+    </div>
+
+    {showHow && <div className="obs-how-panel">
+      <p className="eyebrow">как я это сделала</p>
+      <h3>что происходит когда я переключаю разделы</h3>
+      <p>фронт у меня сделан на реакте, это значит что когда я нажимаю разделы (магазин, симуляции и др), браузер не загружает весь сайт заново, а просто меняет нужную часть страницы, поэтому визуально открывается другой раздел, а в elements меняется html и class, data-page, пр</p>
+      <p>но если реакт просто поменял страницу у себя внутри браузера, бекенд об этом сам не узнает. поэтому я добавила телеметри - отдельные соо. так что когда я перехожу в другой раздел, фронт отправляет событие (route_changed, например)</p>
+      <p>далее цепочка</p>
+      <div className="obs-how-flow"><span>browser</span><b>→</b><span>gateway</span><b>→</b><span>observability</span><b>→</b><span>filebeat</span><b>→</b><span>logstash</span><b>→</b><span>elasticsearch</span><b>→</b><span>kibana</span></div>
+      <p>gateway - диспетчер, получает запрос; observability - сервис, который принимает события; filebeat - сборщик логов, смотрит, что пишут контейнеры; logstash - приводит логи в нормальный вид; elasticsearch - хранит логи; kibana - красивый интерфейс</p>
+      <p>при этом регистрация, рейтинг, файлы и заказ идут не как сообщения телеметри, а как обычные апи запросы в свои микросервисы. гейтвей принимает запрос и отправляет его нужному сервису, события тоже попадают в елк</p>
+    </div>}
+
+    {expanded && <div className="obs-rail-drawer">
+      <div className="obs-service-mini-grid">
+        {services.map((name) => <div key={name}><span className={`mini-status ${health[name] === "online" ? "online" : "offline"}`} /><b>{name}</b><small>{health[name] || "checking"}</small></div>)}
+      </div>
+      <div className="obs-inline-events">
+        {events.length ? events.slice(0, 10).map((item, index) => <article key={`${item["@timestamp"] || index}-${index}`}>
+          <time>{String(item["@timestamp"] || item.timestamp || "").slice(11, 19) || "now"}</time>
+          <b>{displayValue(item.service, "unknown")}</b>
+          <span>{displayValue(item.event ?? item.message, "event")}</span>
+          <em>{displayValue(item.level, "INFO")}</em>
+        </article>) : <p>{state === "offline" ? "The collector cannot reach the observability service." : "No events yet. Open a project or click a control."}</p>}
+      </div>
+      <p className="obs-pipeline-note">Browser telemetry → API Gateway → Observability collector → container stdout → Filebeat → Logstash → Elasticsearch → Kibana.</p>
+    </div>}
+  </section>;
+}
 
 
 

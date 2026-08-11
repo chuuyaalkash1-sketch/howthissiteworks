@@ -1,0 +1,146 @@
+name: three-s-platform
+
+services:
+  gateway:
+    build:
+      context: ./services
+      args:
+        SERVICE: gateway
+    environment:
+      PORT: "8000"
+      AUTH_URL: "http://auth:8001"
+      COMMERCE_URL: "http://commerce:8002"
+      CONTENT_URL: "http://content:8003"
+      OBSERVABILITY_URL: "http://observability:8004"
+      FILES_URL: "http://files:8005"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth
+      - commerce
+      - content
+      - observability
+      - files
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+  auth:
+    build:
+      context: ./services
+      args:
+        SERVICE: auth
+    environment:
+      PORT: "8001"
+      JWT_SECRET: "${JWT_SECRET:-change-me}"
+      OBSERVABILITY_URL: "http://observability:8004"
+    volumes:
+      - auth_data:/data
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+  commerce:
+    build:
+      context: ./services
+      args:
+        SERVICE: commerce
+    environment:
+      PORT: "8002"
+      AUTH_URL: "http://auth:8001"
+      OBSERVABILITY_URL: "http://observability:8004"
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+  content:
+    build:
+      context: ./services
+      args:
+        SERVICE: content
+    environment:
+      PORT: "8003"
+      OBSERVABILITY_URL: "http://observability:8004"
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+
+  files:
+    build:
+      context: ./services
+      args:
+        SERVICE: files
+    environment:
+      PORT: "8005"
+      AUTH_URL: "http://auth:8001"
+      OBSERVABILITY_URL: "http://observability:8004"
+      FILES_DATA_DIR: "/data"
+    volumes:
+      - files_data:/data
+    depends_on:
+      - auth
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+  observability:
+    build:
+      context: ./services
+      args:
+        SERVICE: observability
+    environment:
+      PORT: "8004"
+      ELASTICSEARCH_URL: "http://elasticsearch:9200"
+      LOGSTASH_URL: "http://logstash:9600"
+    labels:
+      co.elastic.logs/enabled: "true"
+      co.elastic.logs/json.keys_under_root: "true"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.2
+    environment:
+      discovery.type: "single-node"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:9.4.2
+    volumes:
+      - ./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    ports:
+      - "5044:5044"
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.4.2
+    environment:
+      ELASTICSEARCH_HOSTS: "http://elasticsearch:9200"
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:9.4.2
+    user: root
+    command:
+      - "--strict.perms=false"
+    volumes:
+      - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - filebeat_data:/usr/share/filebeat/data
+    depends_on:
+      - logstash
+
+volumes:
+  auth_data:
+  files_data:
+  es_data:
+  filebeat_data:

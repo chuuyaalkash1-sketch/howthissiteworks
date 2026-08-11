@@ -161,8 +161,8 @@ void main() {
   vec3 color = texture(uDensity, vUv).rgb;
   color = 1.0 - exp(-color * uExposure);
   float glow = max(max(color.r, color.g), color.b);
-  color += glow * 0.08;
-  color = pow(color, vec3(0.92));
+  color += glow * 0.06;
+  color = pow(color, vec3(0.88));
   vec2 q = vUv - 0.5;
   float vignette = smoothstep(0.86, 0.18, dot(q, q));
   color *= 0.68 + 0.32 * vignette;
@@ -215,20 +215,20 @@ function hexToRgb(hex) {
   return [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16) / 255);
 }
 
-export default function WebGLFluid({ compact = false }) {
+export default function WebGLFluid({ compact = false, quality = "high" }) {
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(true);
   const [paused, setPaused] = useState(false);
   const [settings, setSettings] = useState({
-    force: 5200,
-    radius: 16,
-    smokeLife: 994,
-    velocityLife: 985,
-    swirl: 22,
-    pressure: 18,
-    brightness: 125,
+    force: 5600,
+    radius: 18,
+    smokeLife: 996,
+    velocityLife: 988,
+    swirl: 24,
+    pressure: 20,
+    brightness: 118,
     color: "#9fe4d0",
     rainbow: true,
   });
@@ -330,15 +330,15 @@ export default function WebGLFluid({ compact = false }) {
 
     function resize() {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, quality === "high" ? 2.5 : 2);
       const width = Math.max(2, Math.round(rect.width * dpr));
       const height = Math.max(2, Math.round(rect.height * dpr));
       if (canvas.width === width && canvas.height === height && velocity) return;
       canvas.width = width;
       canvas.height = height;
       const aspect = width / height;
-      const simBase = window.innerWidth < 700 ? 96 : 144;
-      const dyeBase = window.innerWidth < 700 ? 384 : 640;
+      const simBase = window.innerWidth < 700 ? 132 : quality === "high" ? 192 : 144;
+      const dyeBase = window.innerWidth < 700 ? 640 : quality === "high" ? 1152 : 768;
       const simW = aspect >= 1 ? Math.round(simBase * aspect) : simBase;
       const simH = aspect >= 1 ? simBase : Math.round(simBase / aspect);
       const dyeW = aspect >= 1 ? Math.round(dyeBase * aspect) : dyeBase;

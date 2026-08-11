@@ -23,8 +23,6 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir --upgrade pip && \
     python -m pip install --no-cache-dir -r requirements.txt
 
-COPY backend/ ./backend/
-
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /var/data/data /var/data/uploads
