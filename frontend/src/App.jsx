@@ -3,6 +3,8 @@ import { articles } from "./articles";
 import "./styles.css";
 import WebGLFluid from "./WebGLFluid";
 
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+
 const projects = [
   { id: 1, title: "Knowledge base", path: "/knowledge", description: "Programmer basics, architecture notes and project documentation.", image: "/project-covers/knowledge.svg", accent: "#cfe8dc" },
   { id: 2, title: "WWM wardrobe", path: "/shop", description: "A demo storefront with outfits, wishlist, cart and authenticated checkout.", image: "/project-covers/shop.svg", accent: "#f2dfd5" },
@@ -66,7 +68,7 @@ function emitBrowserEvent(event, fields = {}) {
     ...fields,
   };
 
-  fetch("/api/observability/events", {
+  fetch(`${API_URL}/api/observability/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -245,7 +247,8 @@ function Home({ navigate }) {
   return <main className="portfolio-home">
     <section className="hero-panel">
       <p className="eyebrow">3/S · educational collection</p>
-      <h1>Educational project.</h1>
+      <h1>Three connected projects.</h1>
+      <p>One interface combines the knowledge base, the shop and interactive simulations. The observability strip shows route changes and service activity.</p>
     </section>
     <section className="project-grid project-grid-with-images">
       {projects.map((project) => <button key={project.id} className="project-card project-card-visual ready" style={{ "--card-accent": project.accent }} onClick={() => navigate(project.path)}>
@@ -269,9 +272,9 @@ function KnowledgeBase({ navigate }) {
   const selectedArticle = useMemo(() => articles.find((article) => article.id === selectedArticleId) ?? articles[0], [selectedArticleId]);
 
   async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
-  async function loadRatings() { try { setStatistics(await read(await fetch("/api/ratings"))); } catch { setRatingMessage("Could not load rating statistics."); } }
+  async function loadRatings() { try { setStatistics(await read(await fetch(`${API_URL}/api/ratings`))); } catch { setRatingMessage("Could not load rating statistics."); } }
   useEffect(() => { loadRatings(); }, []);
-  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Enter a whole number from 1 to 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Thank you. Your rating of ${value} / 777 was saved.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
+  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Enter a whole number from 1 to 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch(`${API_URL}/api/ratings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Thank you. Your rating of ${value} / 777 was saved.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
 
   return <main className="knowledge-page">
     <div className="knowledge-layout">
@@ -295,8 +298,8 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
 
   useEffect(() => setMode(initialMode), [initialMode]);
   async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
-  useEffect(() => { if (!token) return; fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } }).then(read).then((data) => { setUser(data); }).catch(() => { localStorage.removeItem("access_token"); setToken(""); window.dispatchEvent(new Event("auth-changed")); }); }, [token]);
-  async function submitAuth(event) { event.preventDefault(); setMessage(""); try { const data = await read(await fetch(`/api/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })); localStorage.setItem("access_token", data.access_token); setToken(data.access_token); setUser(data.user); window.dispatchEvent(new Event("auth-changed")); onSuccess(); } catch (error) { setMessage(error.message); } }
+  useEffect(() => { if (!token) return; fetch(`${API_URL}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } }).then(read).then((data) => { setUser(data); }).catch(() => { localStorage.removeItem("access_token"); setToken(""); window.dispatchEvent(new Event("auth-changed")); }); }, [token]);
+  async function submitAuth(event) { event.preventDefault(); setMessage(""); try { const data = await read(await fetch(`${API_URL}/api/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })); localStorage.setItem("access_token", data.access_token); setToken(data.access_token); setUser(data.user); window.dispatchEvent(new Event("auth-changed")); onSuccess(); } catch (error) { setMessage(error.message); } }
   function logout() { localStorage.removeItem("access_token"); setToken(""); setUser(null); window.dispatchEvent(new Event("auth-changed")); }
 
   if (embedded) return <section className="embedded-account"><div className="account-card"><p className="eyebrow">PERSONAL ACCOUNT</p>{!user ? <><h1>{mode === "login" ? "Sign In" : "Sign Up"}</h1><div className="segmented"><button onClick={() => setMode("login")}>Sign In</button><button onClick={() => setMode("register")}>Sign Up</button></div><form onSubmit={submitAuth}><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" minLength="3" required /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" minLength="8" required /><button className="primary">Continue</button></form></> : <div className="account-title"><div><h1>{user.username}</h1><p>Your account is ready.</p></div><button onClick={logout}>Log Out</button></div>}{message && <p className="message">{message}</p>}</div></section>;
@@ -305,6 +308,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
     <section className="art-account-showcase">
       <div className="art-account-overlay">
         <button className="account-brand" onClick={() => window.history.back()}>3 / S</button>
+        <div><p className="eyebrow">CREATIVE SPACE</p><h1>Build your collection.<br />Keep your work close.</h1><p>A personal space for saved outfits, uploaded files and interactive projects.</p></div>
         <span>Portfolio · Marketplace · Simulations</span>
       </div>
     </section>
@@ -343,7 +347,7 @@ function FileManager({ embedded = false }) {
   async function loadFiles() {
     if (!token) return;
     try {
-      const data = await read(await fetch("/api/my-files", {
+      const data = await read(await fetch(`${API_URL}/api/my-files`, {
         headers: { Authorization: `Bearer ${token}` },
       }));
       setFiles(data.files || []);
@@ -357,6 +361,8 @@ function FileManager({ embedded = false }) {
   async function upload(event) {
     event.preventDefault();
 
+    // Save the actual DOM form before the await.
+    // React's event.currentTarget can become null after async work finishes.
     const formElement = event.currentTarget;
     const inputElement = fileInputRef.current;
     const file = inputElement?.files?.[0];
@@ -370,7 +376,7 @@ function FileManager({ embedded = false }) {
     setMessage("");
 
     try {
-      await read(await fetch("/api/uploads", {
+      await read(await fetch(`${API_URL}/api/uploads`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body,
@@ -381,6 +387,7 @@ function FileManager({ embedded = false }) {
       setSelectedFileName("");
       setMessage("File uploaded.");
 
+      // Wait for the refreshed list before finishing the UI state.
       await loadFiles();
     } catch (error) {
       setMessage(error.message);
@@ -391,7 +398,7 @@ function FileManager({ embedded = false }) {
 
   async function remove(id) {
     try {
-      await read(await fetch(`/api/my-files/${id}`, {
+      await read(await fetch(`${API_URL}/api/my-files/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       }));
@@ -404,7 +411,7 @@ function FileManager({ embedded = false }) {
 
   async function download(file) {
     try {
-      const response = await fetch(`/api/my-files/${file.id}/download`, {
+      const response = await fetch(`${API_URL}/api/my-files/${file.id}/download`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Download failed");
@@ -484,7 +491,7 @@ function FileManager({ embedded = false }) {
   </section>;
 }
 
-function ShopHome({ navigate }) { return <main className="shop-home"><section className="shop-hero"><div><p className="eyebrow">WWM</p><h1>Wardrobe catalog</h1><p>Outfits, wishlist, cart and protected checkout.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>Open catalog</button></div><div className="hero-silhouette">風</div></section><section className="shop-features"><div><span>01</span><h3>Catalog</h3><p>A collection of outfits for those who turn the path into their own style.</p></div><div><span>02</span><h3>Wishlist</h3><p>Add to the wishlist and quickly return to the outfits that you've hooked.</p></div><div><span>03</span><h3>Checkout</h3><p>From inspiration to an order. Orders are available only after sign in.</p></div></section></main>; }
+function ShopHome({ navigate }) { return <main className="shop-home"><section className="shop-hero"><div><p className="eyebrow">WWM</p><h1>Wardrobe catalog</h1><p>Outfits, wishlist, cart and protected checkout.</p><button className="primary" onClick={() => navigate("/shop/catalog")}>Open catalog</button></div><div className="hero-silhouette">風</div></section><section className="shop-features"><div><span>01</span><h3>Catalog</h3><p>Open product cards and compare outfit options.</p></div><div><span>02</span><h3>Wishlist</h3><p>Save items and return to them later.</p></div><div><span>03</span><h3>Checkout</h3><p>Orders are available only after sign in.</p></div></section></main>; }
 
 function Catalog({ navigate, setCart, wishlist, setWishlist, authToken, onCartAdded }) {
   const [query, setQuery] = useState(""); const [category, setCategory] = useState("All");
@@ -550,7 +557,7 @@ function Checkout({ cart, setCart, navigate, authToken }) {
     setProcessing(true);
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     try {
-      const response = await fetch("/api/commerce/orders", {
+      const response = await fetch(`${API_URL}/api/commerce/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ items: cart, total }),
@@ -656,9 +663,9 @@ function ObservabilityStrip({ currentPath }) {
     const load = async () => {
       try {
         const [eventsResponse, healthResponse, stackResponse] = await Promise.all([
-          fetch("/api/observability/events?limit=18", { cache: "no-store" }),
-          fetch("/api/observability/health", { cache: "no-store" }),
-          fetch("/api/observability/stack-health", { cache: "no-store" }),
+          fetch(`${API_URL}/api/observability/events?limit=18`, { cache: "no-store" }),
+          fetch(`${API_URL}/api/observability/health`, { cache: "no-store" }),
+          fetch(`${API_URL}/api/observability/stack-health`, { cache: "no-store" }),
         ]);
         if (!eventsResponse.ok || !healthResponse.ok) throw new Error("observability unavailable");
         const eventData = await eventsResponse.json();
@@ -701,12 +708,11 @@ function ObservabilityStrip({ currentPath }) {
     {showHow && <div className="obs-how-panel">
       <p className="eyebrow">как я это сделала</p>
       <h3>что происходит когда я переключаю разделы</h3>
-      <p>фронт у меня сделан на реакте, это значит что когда я нажимаю разделы (магазин, симуляции и др), браузер не загружает весь сайт заново, а просто меняет нужную часть страницы, поэтому визуально открывается другой раздел, а в elements меняется html и class, data-page, пр</p>
-      <p>но если реакт просто поменял страницу у себя внутри браузера, бекенд об этом сам не узнает. поэтому я добавила телеметри - отдельные соо. так что когда я перехожу в другой раздел, фронт отправляет событие (route_changed, например)</p>
-      <p>далее цепочка</p>
+      <p>короче у меня frontend это spa на react. поэтому я не перезагружаю всю страницу каждый раз, а react меняет нужный кусок dom. из-за этого в elements меняются class, data-page и data-route у корневого div, а содержимое страницы реально заменяется.</p>
+      <p>чтобы это было видно еще и в network, я отдельно отправляю telemetry. при переходе между страницами уходит route_changed, при клике ui_click, а при submit формы form_submit. значения паролей, jwt и содержимое файлов туда не отправляются.</p>
       <div className="obs-how-flow"><span>browser</span><b>→</b><span>gateway</span><b>→</b><span>observability</span><b>→</b><span>filebeat</span><b>→</b><span>logstash</span><b>→</b><span>elasticsearch</span><b>→</b><span>kibana</span></div>
-      <p>gateway - диспетчер, получает запрос; observability - сервис, который принимает события; filebeat - сборщик логов, смотрит, что пишут контейнеры; logstash - приводит логи в нормальный вид; elasticsearch - хранит логи; kibana - красивый интерфейс</p>
-      <p>при этом регистрация, рейтинг, файлы и заказ идут не как сообщения телеметри, а как обычные апи запросы в свои микросервисы. гейтвей принимает запрос и отправляет его нужному сервису, события тоже попадают в елк</p>
+      <p>при этом регистрация, рейтинг, файлы и заказ идут не как telemetry, а как обычные api запросы в свои микросервисы. gateway принимает запрос и отправляет его нужному сервису, а события потом тоже попадают в elk.</p>
+      <p className="obs-how-tip">что показать: f12 → elements и смотреть на div.app-shell, потом f12 → network и фильтр observability. при переключении разделов должны меняться div class/data-route и появляться новые post запросы.</p>
     </div>}
 
     {expanded && <div className="obs-rail-drawer">
