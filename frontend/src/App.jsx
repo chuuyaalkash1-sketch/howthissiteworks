@@ -3,7 +3,7 @@ import { articles } from "./articles";
 import "./styles.css";
 import WebGLFluid from "./WebGLFluid";
 
-const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const API_URL = "";
 
 const projects = [
   { id: 1, title: "Knowledge base", path: "/knowledge", description: "Programmer basics, architecture notes and project documentation.", image: "/project-covers/knowledge.svg", accent: "#cfe8dc" },
@@ -702,7 +702,7 @@ function ObservabilityStrip({ currentPath }) {
 
       <button className="obs-expand-button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide logs" : "Live logs"}</button>
       <button className="obs-how-button" onClick={() => setShowHow((value) => !value)}>{showHow ? "Hide info" : "How it works"}</button>
-      <a className="obs-kibana-button" href="http://localhost:5601" target="_blank" rel="noreferrer">Kibana ↗</a>
+      <a className="obs-kibana-button" href="/kibana/" target="_blank" rel="noreferrer">Kibana ↗</a>
     </div>
 
     {showHow && <div className="obs-how-panel">

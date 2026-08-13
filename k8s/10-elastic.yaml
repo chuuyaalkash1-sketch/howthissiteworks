@@ -1,0 +1,232 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-data
+  namespace: elastic
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: elastic
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: elastic
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.15.5
+          ports:
+            - containerPort: 9200
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "false"
+            - name: node.store.allow_mmap
+              value: "false"
+            - name: ES_JAVA_OPTS
+              value: "-Xms768m -Xmx768m"
+          resources:
+            requests:
+              cpu: 300m
+              memory: 1200Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: elasticsearch-data
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-pipeline
+  namespace: elastic
+data:
+  logstash.conf: |
+    input {
+      beats { port => 5044 }
+    }
+    filter {
+      if [message] =~ /^\s*\{/ {
+        json { source => "message" }
+      }
+      if ![service] {
+        mutate { add_field => { "service" => "%{[kubernetes][container][name]}" } }
+      }
+      if ![event] {
+        mutate { add_field => { "event" => "container_log" } }
+      }
+      if ![level] {
+        mutate { add_field => { "level" => "INFO" } }
+      }
+    }
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "three-s-events-%{+YYYY.MM.dd}"
+      }
+      stdout { codec => rubydebug }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: elastic
+spec:
+  selector:
+    app: logstash
+  ports:
+    - name: beats
+      port: 5044
+      targetPort: 5044
+    - name: api
+      port: 9600
+      targetPort: 9600
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: elastic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:8.15.5
+          ports:
+            - containerPort: 5044
+            - containerPort: 9600
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms384m -Xmx384m"
+          resources:
+            requests:
+              cpu: 150m
+              memory: 512Mi
+            limits:
+              cpu: 700m
+              memory: 900Mi
+          volumeMounts:
+            - name: pipeline
+              mountPath: /usr/share/logstash/pipeline
+      volumes:
+        - name: pipeline
+          configMap:
+            name: logstash-pipeline
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: elastic
+data:
+  kibana.yml: |
+    server.host: "0.0.0.0"
+    server.basePath: "/kibana"
+    server.rewriteBasePath: true
+    elasticsearch.hosts: ["http://elasticsearch:9200"]
+    xpack.security.enabled: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: elastic
+spec:
+  selector:
+    app: kibana
+  ports:
+    - name: http
+      port: 5601
+      targetPort: 5601
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: elastic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.15.5
+          ports:
+            - containerPort: 5601
+          resources:
+            requests:
+              cpu: 150m
+              memory: 512Mi
+            limits:
+              cpu: 700m
+              memory: 1200Mi
+          readinessProbe:
+            httpGet:
+              path: /kibana/api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/kibana/config/kibana.yml
+              subPath: kibana.yml
+      volumes:
+        - name: config
+          configMap:
+            name: kibana-config
