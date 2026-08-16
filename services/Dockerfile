@@ -5,4 +5,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 ARG SERVICE
 ENV SERVICE=${SERVICE}
-CMD ["uvicorn", "services.observability.main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["uvicorn", "observability.main:app", "--host", "0.0.0.0", "--port", "10000"]
