@@ -76,9 +76,13 @@ function emitBrowserEvent(event, fields = {}) {
     keepalive: true,
   };
 
-  fetch(`${OBSERVABILITY_URL}/events`, options).catch(() => {
-    fetch("/api/observability/events", options).catch(() => {});
-  });
+  fetch("/api/observability/events", options)
+    .then((response) => {
+      if (!response.ok) throw new Error(`gateway observability ${response.status}`);
+    })
+    .catch(() => {
+      fetch(`${OBSERVABILITY_URL}/events`, options).catch(() => {});
+    });
 }
 
 function useRoute() {
@@ -297,14 +301,76 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [token, setToken] = useState(() => localStorage.getItem("access_token") || "");
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("current_user") || "null");
+    } catch {
+      return null;
+    }
+  });
   const [message, setMessage] = useState("");
 
   useEffect(() => setMode(initialMode), [initialMode]);
-  async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
-  useEffect(() => { if (!token) return; fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } }).then(read).then((data) => { setUser(data); }).catch(() => { localStorage.removeItem("access_token"); setToken(""); window.dispatchEvent(new Event("auth-changed")); }); }, [token]);
-  async function submitAuth(event) { event.preventDefault(); setMessage(""); try { const data = await read(await fetch(`/api/auth/${mode === "login" ? "login" : "register"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) })); localStorage.setItem("access_token", data.access_token); setToken(data.access_token); setUser(data.user); window.dispatchEvent(new Event("auth-changed")); onSuccess(); } catch (error) { setMessage(error.message); } }
-  function logout() { localStorage.removeItem("access_token"); setToken(""); setUser(null); window.dispatchEvent(new Event("auth-changed")); }
+
+  async function read(response) {
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `Request failed (${response.status})`);
+    return data;
+  }
+
+  useEffect(() => {
+    if (!token) return;
+
+    fetch("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    })
+      .then(read)
+      .then((data) => {
+        const currentUser = data?.user || data;
+        if (currentUser?.username) {
+          setUser(currentUser);
+          localStorage.setItem("current_user", JSON.stringify(currentUser));
+        }
+      })
+      .catch(() => {
+        // Keep the authenticated UI usable if /me is temporarily unavailable.
+      });
+  }, [token]);
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    setMessage("");
+
+    try {
+      const data = await read(await fetch(`/api/auth/${mode === "login" ? "login" : "register"}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      }));
+
+      if (!data.access_token) throw new Error("The auth service did not return an access token.");
+
+      const currentUser = data.user?.username ? data.user : { username };
+
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("current_user", JSON.stringify(currentUser));
+      setToken(data.access_token);
+      setUser(currentUser);
+      window.dispatchEvent(new Event("auth-changed"));
+      onSuccess();
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("current_user");
+    setToken("");
+    setUser(null);
+    window.dispatchEvent(new Event("auth-changed"));
+  }
 
   if (embedded) return <section className="embedded-account"><div className="account-card"><p className="eyebrow">PERSONAL ACCOUNT</p>{!user ? <><h1>{mode === "login" ? "Sign In" : "Sign Up"}</h1><div className="segmented"><button onClick={() => setMode("login")}>Sign In</button><button onClick={() => setMode("register")}>Sign Up</button></div><form onSubmit={submitAuth}><input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" minLength="3" required /><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" minLength="8" required /><button className="primary">Continue</button></form></> : <div className="account-title"><div><h1>{user.username}</h1><p>Your account is ready.</p></div><button onClick={logout}>Log Out</button></div>}{message && <p className="message">{message}</p>}</div></section>;
 
@@ -663,15 +729,15 @@ function ObservabilityStrip({ currentPath }) {
 
     async function request(path) {
       try {
-        const response = await fetch(`${OBSERVABILITY_URL}${path}`, {
+        const response = await fetch(`/api/observability${path}`, {
           cache: "no-store",
         });
         if (response.ok) return response;
       } catch {
-        // Fall back to the gateway route below.
+        // Try the public observability service below.
       }
 
-      return fetch(`/api/observability${path}`, {
+      return fetch(`${OBSERVABILITY_URL}${path}`, {
         cache: "no-store",
       });
     }
@@ -754,12 +820,12 @@ function ObservabilityStrip({ currentPath }) {
     {showHow && <div className="obs-how-panel">
       <p className="eyebrow">как я это сделала</p>
       <h3>как появляются логи</h3>
-      <p>React отправляет события о переходах, кликах и ошибках прямо в отдельный сервис observability. Остальные микросервисы тоже могут отправлять туда свои структурированные события.</p>
-      <p>Observability сразу показывает свежие события через API и сохраняет их в Elasticsearch. Поэтому встроенные Live logs могут работать независимо от интерфейса Kibana.</p>
+      <p>реакт отправляет события о переходах, кликах и ошибках прямо в отдельный сервис observability остальные микросервисы тоже могут отправлять туда свои структурированные события</p>
+      <p>оbservability сразу показывает свежие события через api и сохраняет их в elasticsearch, поэтому встроенные live logs могут работать независимо от интерфейса кибаны</p>
       <div className="obs-how-flow">
         <span>browser / services</span><b>→</b><span>observability</span><b>→</b><span>elasticsearch</span><b>→</b><span>kibana</span>
       </div>
-      <p>Gateway остаётся диспетчером обычных API-запросов сайта. Kibana — отдельный полный интерфейс для данных Elasticsearch, а эта панель показывает последние события прямо на сайте.</p>
+      <p>gateway остаётся диспетчером обычных api-запросов сайта, кибана отдельный полный интерфейс для данных elasticsearch, а эта панель показывает последние события прямо на сайте</p>
     </div>}
 
     {expanded && <div className="obs-rail-drawer">
