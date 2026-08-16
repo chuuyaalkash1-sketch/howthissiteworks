@@ -342,33 +342,67 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
     event.preventDefault();
     setMessage("");
 
-    try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+    const cleanUsername = username.trim();
 
-      const data = await read(await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-        }),
-      }));
+    try {
+      let authData;
+
+      if (mode === "register") {
+        const registerData = await read(await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: cleanUsername,
+            password,
+          }),
+        }));
+
+        const registerToken =
+          registerData?.access_token ||
+          registerData?.token ||
+          registerData?.jwt ||
+          "";
+
+        if (registerToken) {
+          authData = registerData;
+        } else {
+          authData = await read(await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: cleanUsername,
+              password,
+            }),
+          }));
+        }
+      } else {
+        authData = await read(await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: cleanUsername,
+            password,
+          }),
+        }));
+      }
 
       const accessToken =
-        data.access_token ||
-        data.token ||
-        data.jwt ||
+        authData?.access_token ||
+        authData?.token ||
+        authData?.jwt ||
         "";
 
       if (!accessToken) {
-        console.error("Auth response:", data);
-        throw new Error("Auth service returned no token.");
+        console.error("Auth response:", authData);
+        throw new Error(
+          `Auth response has no token: ${JSON.stringify(authData)}`
+        );
       }
 
       const currentUser =
-        data.user?.username
-          ? data.user
-          : { username: username.trim() };
+        authData?.user?.username
+          ? authData.user
+          : { username: cleanUsername };
 
       localStorage.setItem("access_token", accessToken);
       localStorage.setItem("current_user", JSON.stringify(currentUser));
@@ -379,7 +413,11 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
       window.dispatchEvent(new Event("auth-changed"));
       onSuccess();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Authentication failed.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Authentication failed."
+      );
     }
   }
 
