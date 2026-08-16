@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 from collections import deque
 from datetime import datetime, timezone
@@ -11,8 +10,9 @@ from pydantic import BaseModel, ConfigDict
 
 app = FastAPI(title="3S Observability Collector")
 
-ELASTICSEARCH_URL = os.getenv("ELASTICSEARCH_URL", "http://elasticsearch:9200").rstrip("/")
-LOGSTASH_URL = os.getenv("LOGSTASH_URL", "http://logstash:9600").rstrip("/")
+ELASTICSEARCH_URL = "https://threes-elasticsearch.onrender.com"
+KIBANA_URL = "https://threes-kibana-6ul4.onrender.com"
+
 EVENTS = deque(maxlen=2500)
 
 
@@ -33,7 +33,6 @@ def normalize(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_elastic_source(payload: dict[str, Any]) -> dict[str, Any]:
-    """Convert ECS/Filebeat-shaped fields back to simple values for the UI."""
     item = dict(payload or {})
 
     event_value = item.get("event")
@@ -60,20 +59,28 @@ def normalize_elastic_source(payload: dict[str, Any]) -> dict[str, Any]:
     item.setdefault("service", "unknown")
     item.setdefault("event", item.get("message") or "event")
     item.setdefault("level", "INFO")
+
     return item
 
 
 def stdout_event(payload: dict[str, Any]) -> None:
-    # Filebeat reads this JSON line from the container stdout.
-    print(json.dumps(payload, ensure_ascii=False), file=sys.stdout, flush=True)
+    print(
+        json.dumps(payload, ensure_ascii=False),
+        file=sys.stdout,
+        flush=True,
+    )
 
 
 def timestamp_value(item: dict[str, Any]) -> float:
     raw = item.get("@timestamp") or item.get("timestamp")
+
     if not raw:
         return 0.0
+
     try:
-        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")).timestamp()
+        return datetime.fromisoformat(
+            str(raw).replace("Z", "+00:00")
+        ).timestamp()
     except Exception:
         return 0.0
 
@@ -88,91 +95,187 @@ def event_key(item: dict[str, Any]) -> tuple:
     )
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "3s-observability",
+        "status": "online",
+        "elasticsearch": ELASTICSEARCH_URL,
+        "kibana": KIBANA_URL,
+    }
+
+
 @app.get("/health")
 def health():
-    return {"status": "online"}
+    return {
+        "status": "online"
+    }
 
 
 @app.get("/stack-health")
 async def stack_health():
-    result = {"collector": "online", "elasticsearch": "offline", "logstash": "offline"}
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"{ELASTICSEARCH_URL}/_cluster/health", timeout=1.2)
-            if response.is_success:
-                result["elasticsearch"] = response.json().get("status", "online")
-        except Exception:
-            pass
+    result = {
+        "collector": "online",
+        "elasticsearch": "offline",
+        "kibana": KIBANA_URL,
+    }
 
-        try:
-            response = await client.get(f"{LOGSTASH_URL}/_node/pipelines", timeout=1.2)
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{ELASTICSEARCH_URL}/_cluster/health",
+                timeout=15.0,
+            )
+
             if response.is_success:
-                result["logstash"] = "online"
-        except Exception:
-            pass
+                result["elasticsearch"] = (
+                    response.json().get("status") or "online"
+                )
+            else:
+                result["elasticsearch"] = f"http-{response.status_code}"
+
+    except Exception:
+        result["elasticsearch"] = "offline"
+
     return result
 
 
 @app.post("/events")
-def ingest(item: Event):
+async def ingest(item: Event):
     payload = normalize(item.model_dump())
+
     EVENTS.appendleft(payload)
     stdout_event(payload)
+
+    date_suffix = datetime.now(
+        timezone.utc
+    ).strftime("%Y.%m.%d")
+
+    index_name = f"three-s-events-{date_suffix}"
+
+    indexed = False
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{ELASTICSEARCH_URL}/{index_name}/_doc",
+                json=payload,
+                timeout=20.0,
+            )
+
+            indexed = response.is_success
+
+    except Exception:
+        indexed = False
+
     return {
         "accepted": True,
+        "indexed": indexed,
         "timestamp": payload["@timestamp"],
-        "pipeline": "stdout -> filebeat -> logstash -> elasticsearch",
+        "pipeline": "observability -> elasticsearch -> kibana",
     }
 
 
 async def elastic_events(limit: int) -> list[dict[str, Any]]:
     query = {
         "size": min(max(limit * 2, limit), 400),
-        "sort": [{"@timestamp": {"order": "desc", "unmapped_type": "date"}}],
-        "query": {"match_all": {}},
+        "sort": [
+            {
+                "@timestamp": {
+                    "order": "desc",
+                    "unmapped_type": "date",
+                }
+            }
+        ],
+        "query": {
+            "match_all": {}
+        },
     }
-    url = f"{ELASTICSEARCH_URL}/three-s-events-*/_search?ignore_unavailable=true&allow_no_indices=true"
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=query, timeout=1.8)
-        if not response.is_success:
-            return []
-        hits = response.json().get("hits", {}).get("hits", [])
-        return [normalize_elastic_source(hit.get("_source", {})) for hit in hits]
+
+    url = (
+        f"{ELASTICSEARCH_URL}"
+        "/three-s-events-*/_search"
+        "?ignore_unavailable=true"
+        "&allow_no_indices=true"
+    )
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                url,
+                json=query,
+                timeout=20.0,
+            )
+
+            if not response.is_success:
+                return []
+
+            hits = (
+                response
+                .json()
+                .get("hits", {})
+                .get("hits", [])
+            )
+
+            return [
+                normalize_elastic_source(
+                    hit.get("_source", {})
+                )
+                for hit in hits
+            ]
+
+    except Exception:
+        return []
 
 
 @app.get("/events")
 async def events(limit: int = 50):
     safe_limit = min(max(limit, 1), 200)
 
-    try:
-        indexed = await elastic_events(safe_limit)
-    except Exception:
-        indexed = []
+    indexed = await elastic_events(safe_limit)
 
-    # Important: do NOT choose between Elasticsearch and memory.
-    # Fresh browser/backend events appear in memory immediately, while Filebeat/Logstash
-    # can take a moment to index them. Merge both sources so yesterday's indexed records
-    # never hide today's fresh events.
     merged = list(EVENTS) + indexed
 
     unique = {}
+
     for item in merged:
         normalized = normalize_elastic_source(item)
         key = event_key(normalized)
+
         if key not in unique:
             unique[key] = normalized
 
-    ordered = sorted(unique.values(), key=timestamp_value, reverse=True)
+    ordered = sorted(
+        unique.values(),
+        key=timestamp_value,
+        reverse=True,
+    )
 
     return {
         "source": "collector-memory+elasticsearch",
         "events": ordered[:safe_limit],
         "memory_count": len(EVENTS),
         "indexed_count": len(indexed),
+        "kibana": KIBANA_URL,
     }
 
 
 @app.get("/services")
 def services():
-    names = {event.get("service") for event in EVENTS}
-    return {name: "online" for name in names if name}
+    names = {
+        event.get("service")
+        for event in EVENTS
+    }
+
+    return {
+        name: "online"
+        for name in names
+        if name
+    }
+
+
+@app.get("/kibana")
+def kibana():
+    return {
+        "url": KIBANA_URL
+    }

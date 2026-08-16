@@ -695,7 +695,13 @@ function ObservabilityStrip({ currentPath }) {
 
       <button className="obs-expand-button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide logs" : "Live logs"}</button>
       <button className="obs-how-button" onClick={() => setShowHow((value) => !value)}>{showHow ? "Hide info" : "How it works"}</button>
-      <a className="obs-kibana-button" href="http://localhost:5601" target="_blank" rel="noreferrer">Kibana ↗</a>
+      <a
+  href="https://threes-kibana-6ul4.onrender.com"
+  target="_blank"
+  rel="noreferrer"
+>
+  Kibana
+</a>
     </div>
 
     {showHow && <div className="obs-how-panel">
