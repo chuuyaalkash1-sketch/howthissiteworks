@@ -9,7 +9,7 @@ ROUTES = {
     "auth": os.getenv("AUTH_URL", "http://auth:8001"),
     "commerce": os.getenv("COMMERCE_URL", "http://commerce:8002"),
     "content": os.getenv("CONTENT_URL", "http://content:8003"),
-    "observability": os.getenv("OBSERVABILITY_URL", "http://observability:8004"),
+    "observability": os.getenv("OBSERVABILITY_URL", "https://threes-observability.onrender.com"),
     "files": os.getenv("FILES_URL", "http://files:8005"),
 }
 
@@ -102,7 +102,7 @@ async def platform_health():
     async with httpx.AsyncClient() as client:
         for name, url in ROUTES.items():
             try:
-                response = await client.get(f"{url}/health", timeout=1.2)
+                response = await client.get(f"{url}/health", timeout=8.0)
                 result[name] = "online" if response.status_code == 200 else "degraded"
             except Exception:
                 result[name] = "offline"

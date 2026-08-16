@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from collections import deque
 from datetime import datetime, timezone
@@ -6,12 +7,27 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict
 
 app = FastAPI(title="3S Observability Collector")
 
-ELASTICSEARCH_URL = "https://threes-elasticsearch.onrender.com"
-KIBANA_URL = "https://threes-kibana-6ul4.onrender.com"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+ELASTICSEARCH_URL = os.getenv(
+    "ELASTICSEARCH_URL",
+    "https://threes-elasticsearch.onrender.com",
+).rstrip("/")
+KIBANA_URL = os.getenv(
+    "KIBANA_URL",
+    "https://threes-kibana-6ul4.onrender.com",
+).rstrip("/")
 
 EVENTS = deque(maxlen=2500)
 
@@ -263,15 +279,17 @@ async def events(limit: int = 50):
 @app.get("/services")
 def services():
     names = {
-        event.get("service")
-        for event in EVENTS
+        item.get("service")
+        for item in EVENTS
     }
 
-    return {
+    result = {
         name: "online"
         for name in names
         if name
     }
+    result["observability"] = "online"
+    return result
 
 
 @app.get("/kibana")
