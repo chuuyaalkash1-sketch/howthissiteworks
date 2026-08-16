@@ -3,6 +3,9 @@ import { articles } from "./articles";
 import "./styles.css";
 import WebGLFluid from "./WebGLFluid";
 
+const OBSERVABILITY_URL = "https://threes-observability.onrender.com";
+const KIBANA_URL = "https://threes-kibana-6ul4.onrender.com";
+
 const projects = [
   { id: 1, title: "Knowledge base", path: "/knowledge", description: "Programmer basics, architecture notes and project documentation.", image: "/project-covers/knowledge.svg", accent: "#cfe8dc" },
   { id: 2, title: "WWM wardrobe", path: "/shop", description: "A demo storefront with outfits, wishlist, cart and authenticated checkout.", image: "/project-covers/shop.svg", accent: "#f2dfd5" },
@@ -66,12 +69,16 @@ function emitBrowserEvent(event, fields = {}) {
     ...fields,
   };
 
-  fetch("/api/observability/events", {
+  const options = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     keepalive: true,
-  }).catch(() => {});
+  };
+
+  fetch(`${OBSERVABILITY_URL}/events`, options).catch(() => {
+    fetch("/api/observability/events", options).catch(() => {});
+  });
 }
 
 function useRoute() {
@@ -653,29 +660,63 @@ function ObservabilityStrip({ currentPath }) {
 
   useEffect(() => {
     let alive = true;
+
+    async function request(path) {
+      try {
+        const response = await fetch(`${OBSERVABILITY_URL}${path}`, {
+          cache: "no-store",
+        });
+        if (response.ok) return response;
+      } catch {
+        // Fall back to the gateway route below.
+      }
+
+      return fetch(`/api/observability${path}`, {
+        cache: "no-store",
+      });
+    }
+
     const load = async () => {
       try {
-        const [eventsResponse, healthResponse, stackResponse] = await Promise.all([
-          fetch("/api/observability/events?limit=18", { cache: "no-store" }),
-          fetch("/api/observability/health", { cache: "no-store" }),
-          fetch("/api/observability/stack-health", { cache: "no-store" }),
+        const [eventsResponse, healthResponse, stackResponse, servicesResponse] = await Promise.all([
+          request("/events?limit=18"),
+          request("/health"),
+          request("/stack-health"),
+          request("/services"),
         ]);
-        if (!eventsResponse.ok || !healthResponse.ok) throw new Error("observability unavailable");
+
+        if (!eventsResponse.ok || !healthResponse.ok) {
+          throw new Error("observability unavailable");
+        }
+
         const eventData = await eventsResponse.json();
         const healthData = await healthResponse.json();
         const stackData = stackResponse.ok ? await stackResponse.json() : {};
+        const serviceData = servicesResponse.ok ? await servicesResponse.json() : {};
+
         if (!alive) return;
+
         setEvents(eventData.events || []);
-        setHealth(healthData || {});
+        setHealth({
+          ...(serviceData || {}),
+          observability: healthData.status === "online" ? "online" : "offline",
+        });
         setStack(stackData || {});
         setState("online");
-      } catch {
-        if (alive) setState("offline");
+      } catch (error) {
+        if (!alive) return;
+        setState("offline");
+        setHealth((current) => ({ ...current, observability: "offline" }));
       }
     };
+
     load();
-    const timer = window.setInterval(load, 2500);
-    return () => { alive = false; window.clearInterval(timer); };
+    const timer = window.setInterval(load, 5000);
+
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
   }, [currentPath]);
 
   const online = services.filter((name) => health[name] === "online").length;
@@ -685,53 +726,70 @@ function ObservabilityStrip({ currentPath }) {
     <div className="obs-rail-main">
       <div className="obs-rail-title">
         <span className="obs-live-dot" />
-        <div><small>EDUCATIONAL PROJECT · LIVE ELK</small><strong>Observability</strong></div>
+        <div><small>EDUCATIONAL PROJECT · LIVE LOGS</small><strong>Observability</strong></div>
       </div>
 
       <div className="obs-rail-metric"><small>ROUTE</small><strong>{currentPath}</strong></div>
       <div className="obs-rail-metric"><small>SERVICES</small><strong>{online}/{services.length}</strong></div>
-      <div className="obs-rail-metric"><small>ELASTICSEARCH</small><strong>{displayValue(stack.elasticsearch, "checking")}</strong></div>
-      <div className="obs-rail-metric obs-latest"><small>LATEST EVENT</small><strong>{displayValue(latest?.event, state === "offline" ? "collector offline" : "waiting for activity")}</strong><span>{displayValue(latest?.service, "frontend")}</span></div>
+      <div className="obs-rail-metric"><small>ELASTICSEARCH</small><strong>{displayValue(stack.elasticsearch, state === "offline" ? "offline" : "checking")}</strong></div>
+      <div className="obs-rail-metric obs-latest">
+        <small>LATEST EVENT</small>
+        <strong>{displayValue(latest?.event, state === "offline" ? "collector offline" : "waiting for activity")}</strong>
+        <span>{displayValue(latest?.service, "frontend")}</span>
+      </div>
 
-      <button className="obs-expand-button" onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide logs" : "Live logs"}</button>
-      <button className="obs-how-button" onClick={() => setShowHow((value) => !value)}>{showHow ? "Hide info" : "How it works"}</button>
-      <a
-  href="https://threes-kibana-6ul4.onrender.com"
-  target="_blank"
-  rel="noreferrer"
->
-  Kibana
-</a>
+      <button className="obs-expand-button" onClick={() => setExpanded((value) => !value)}>
+        {expanded ? "Hide logs" : "Live logs"}
+      </button>
+
+      <button className="obs-how-button" onClick={() => setShowHow((value) => !value)}>
+        {showHow ? "Hide info" : "How it works"}
+      </button>
+
+      <a href={KIBANA_URL} target="_blank" rel="noreferrer">
+        Kibana
+      </a>
     </div>
 
     {showHow && <div className="obs-how-panel">
       <p className="eyebrow">как я это сделала</p>
-      <h3>что происходит когда я переключаю разделы</h3>
-      <p>фронт у меня сделан на реакте, это значит что когда я нажимаю разделы (магазин, симуляции и др), браузер не загружает весь сайт заново, а просто меняет нужную часть страницы, поэтому визуально открывается другой раздел, а в elements меняется html и class, data-page, пр</p>
-      <p>но если реакт просто поменял страницу у себя внутри браузера, бекенд об этом сам не узнает. поэтому я добавила телеметри - отдельные соо. так что когда я перехожу в другой раздел, фронт отправляет событие (route_changed, например)</p>
-      <p>далее цепочка</p>
-      <div className="obs-how-flow"><span>browser</span><b>→</b><span>gateway</span><b>→</b><span>observability</span><b>→</b><span>filebeat</span><b>→</b><span>logstash</span><b>→</b><span>elasticsearch</span><b>→</b><span>kibana</span></div>
-      <p>gateway - диспетчер, получает запрос; observability - сервис, который принимает события; filebeat - сборщик логов, смотрит, что пишут контейнеры; logstash - приводит логи в нормальный вид; elasticsearch - хранит логи; kibana - красивый интерфейс</p>
-      <p>при этом регистрация, рейтинг, файлы и заказ идут не как сообщения телеметри, а как обычные апи запросы в свои микросервисы. гейтвей принимает запрос и отправляет его нужному сервису, события тоже попадают в елк</p>
+      <h3>как появляются логи</h3>
+      <p>React отправляет события о переходах, кликах и ошибках прямо в отдельный сервис observability. Остальные микросервисы тоже могут отправлять туда свои структурированные события.</p>
+      <p>Observability сразу показывает свежие события через API и сохраняет их в Elasticsearch. Поэтому встроенные Live logs могут работать независимо от интерфейса Kibana.</p>
+      <div className="obs-how-flow">
+        <span>browser / services</span><b>→</b><span>observability</span><b>→</b><span>elasticsearch</span><b>→</b><span>kibana</span>
+      </div>
+      <p>Gateway остаётся диспетчером обычных API-запросов сайта. Kibana — отдельный полный интерфейс для данных Elasticsearch, а эта панель показывает последние события прямо на сайте.</p>
     </div>}
 
     {expanded && <div className="obs-rail-drawer">
       <div className="obs-service-mini-grid">
-        {services.map((name) => <div key={name}><span className={`mini-status ${health[name] === "online" ? "online" : "offline"}`} /><b>{name}</b><small>{health[name] || "checking"}</small></div>)}
+        {services.map((name) => <div key={name}>
+          <span className={`mini-status ${health[name] === "online" ? "online" : "offline"}`} />
+          <b>{name}</b>
+          <small>{health[name] || "waiting"}</small>
+        </div>)}
       </div>
+
       <div className="obs-inline-events">
         {events.length ? events.slice(0, 10).map((item, index) => <article key={`${item["@timestamp"] || index}-${index}`}>
           <time>{String(item["@timestamp"] || item.timestamp || "").slice(11, 19) || "now"}</time>
           <b>{displayValue(item.service, "unknown")}</b>
           <span>{displayValue(item.event ?? item.message, "event")}</span>
           <em>{displayValue(item.level, "INFO")}</em>
-        </article>) : <p>{state === "offline" ? "The collector cannot reach the observability service." : "No events yet. Open a project or click a control."}</p>}
+        </article>) : <p>
+          {state === "offline"
+            ? "The collector cannot reach the observability service."
+            : "No events yet. Open a project or click a control."}
+        </p>}
       </div>
-      <p className="obs-pipeline-note">Browser telemetry → API Gateway → Observability collector → container stdout → Filebeat → Logstash → Elasticsearch → Kibana.</p>
+
+      <p className="obs-pipeline-note">
+        Browser/services → Observability collector → Elasticsearch. Kibana is an optional full log explorer.
+      </p>
     </div>}
   </section>;
 }
-
 
 
 export default App;
