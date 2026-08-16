@@ -213,7 +213,7 @@ function App() {
             <button className="sign-up-button" onClick={() => navigate("/account/signup")}>Sign Up</button>
           </> : <>
             <button className="profile-button" onClick={() => navigate("/account")}><span className="profile-dot">3S</span>My Profile</button>
-            <button className="header-logout" onClick={() => { localStorage.removeItem("access_token"); window.dispatchEvent(new Event("auth-changed")); navigate("/"); }}>Log Out</button>
+            <button className="header-logout" onClick={() => { localStorage.removeItem("access_token"); localStorage.removeItem("current_user"); window.dispatchEvent(new Event("auth-changed")); navigate("/"); }}>Log Out</button>
           </>}
         </div>
       </header>
@@ -343,24 +343,43 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
     setMessage("");
 
     try {
-      const data = await read(await fetch(`/api/auth/${mode === "login" ? "login" : "register"}`, {
+      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
+
+      const data = await read(await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
       }));
 
-      if (!data.access_token) throw new Error("The auth service did not return an access token.");
+      const accessToken =
+        data.access_token ||
+        data.token ||
+        data.jwt ||
+        "";
 
-      const currentUser = data.user?.username ? data.user : { username };
+      if (!accessToken) {
+        console.error("Auth response:", data);
+        throw new Error("Auth service returned no token.");
+      }
 
-      localStorage.setItem("access_token", data.access_token);
+      const currentUser =
+        data.user?.username
+          ? data.user
+          : { username: username.trim() };
+
+      localStorage.setItem("access_token", accessToken);
       localStorage.setItem("current_user", JSON.stringify(currentUser));
-      setToken(data.access_token);
+
+      setToken(accessToken);
       setUser(currentUser);
+
       window.dispatchEvent(new Event("auth-changed"));
       onSuccess();
     } catch (error) {
-      setMessage(error.message);
+      setMessage(error instanceof Error ? error.message : "Authentication failed.");
     }
   }
 
