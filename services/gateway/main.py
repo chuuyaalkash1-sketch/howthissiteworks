@@ -81,8 +81,6 @@ async def forward(service: str, path: str, request: Request):
         headers=response_headers,
     )
 
-# Explicit compatibility routes MUST be declared before the generic route.
-# Otherwise /api/ratings would be interpreted as service="ratings".
 @app.api_route("/api/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def auth_api(path: str, request: Request):
     return await forward("auth", path, request)
@@ -122,3 +120,5 @@ async def platform_health():
 @app.api_route("/api/{service}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def generic_proxy(service: str, path: str, request: Request):
     return await forward(service, path, request)
+
+CMD ["uvicorn", "gateway.main:app", "--host", "0.0.0.0", "--port", "10000"]
