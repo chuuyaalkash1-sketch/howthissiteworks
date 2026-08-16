@@ -4,6 +4,7 @@ import "./styles.css";
 import WebGLFluid from "./WebGLFluid";
 
 const OBSERVABILITY_URL = "https://threes-observability.onrender.com";
+const GATEWAY_URL = "https://threes-gateway.onrender.com";
 const KIBANA_URL = "https://threes-kibana-6ul4.onrender.com";
 
 const projects = [
@@ -76,7 +77,7 @@ function emitBrowserEvent(event, fields = {}) {
     keepalive: true,
   };
 
-  fetch("/api/observability/events", options)
+  fetch(`${GATEWAY_URL}/api/observability/events`, options)
     .then((response) => {
       if (!response.ok) throw new Error(`gateway observability ${response.status}`);
     })
@@ -280,9 +281,9 @@ function KnowledgeBase({ navigate }) {
   const selectedArticle = useMemo(() => articles.find((article) => article.id === selectedArticleId) ?? articles[0], [selectedArticleId]);
 
   async function read(response) { const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.detail || "Request failed"); return data; }
-  async function loadRatings() { try { setStatistics(await read(await fetch("/api/ratings"))); } catch { setRatingMessage("Could not load rating statistics."); } }
+  async function loadRatings() { try { setStatistics(await read(await fetch(`${GATEWAY_URL}/api/ratings`))); } catch { setRatingMessage("Could not load rating statistics."); } }
   useEffect(() => { loadRatings(); }, []);
-  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Enter a whole number from 1 to 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch("/api/ratings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Thank you. Your rating of ${value} / 777 was saved.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
+  async function submitRating(event) { event.preventDefault(); const value = Number(rating); if (!Number.isInteger(value) || value < 1 || value > 777) { setRatingMessage("Enter a whole number from 1 to 777."); return; } setRatingLoading(true); setRatingMessage(""); try { const data = await read(await fetch(`${GATEWAY_URL}/api/ratings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }) })); setStatistics(data.statistics || statistics); setRatingMessage(`Thank you. Your rating of ${value} / 777 was saved.`); } catch (error) { setRatingMessage(error.message); } finally { setRatingLoading(false); } }
 
   return <main className="knowledge-page">
     <div className="knowledge-layout">
@@ -321,7 +322,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
   useEffect(() => {
     if (!token) return;
 
-    fetch("/api/auth/me", {
+    fetch(`${GATEWAY_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     })
@@ -348,7 +349,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
       let authData;
 
       if (mode === "register") {
-        const registerData = await read(await fetch("/api/auth/register", {
+        const registerData = await read(await fetch(`${GATEWAY_URL}/api/auth/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -366,7 +367,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
         if (registerToken) {
           authData = registerData;
         } else {
-          authData = await read(await fetch("/api/auth/login", {
+          authData = await read(await fetch(`${GATEWAY_URL}/api/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -376,7 +377,7 @@ function AccountPage({ onSuccess, embedded = false, initialMode = "login" }) {
           }));
         }
       } else {
-        authData = await read(await fetch("/api/auth/login", {
+        authData = await read(await fetch(`${GATEWAY_URL}/api/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -473,7 +474,7 @@ function FileManager({ embedded = false }) {
   async function loadFiles() {
     if (!token) return;
     try {
-      const data = await read(await fetch("/api/my-files", {
+      const data = await read(await fetch(`${GATEWAY_URL}/api/my-files`, {
         headers: { Authorization: `Bearer ${token}` },
       }));
       setFiles(data.files || []);
@@ -500,7 +501,7 @@ function FileManager({ embedded = false }) {
     setMessage("");
 
     try {
-      await read(await fetch("/api/uploads", {
+      await read(await fetch(`${GATEWAY_URL}/api/uploads`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body,
@@ -521,7 +522,7 @@ function FileManager({ embedded = false }) {
 
   async function remove(id) {
     try {
-      await read(await fetch(`/api/my-files/${id}`, {
+      await read(await fetch(`${GATEWAY_URL}/api/my-files/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       }));
@@ -534,7 +535,7 @@ function FileManager({ embedded = false }) {
 
   async function download(file) {
     try {
-      const response = await fetch(`/api/my-files/${file.id}/download`, {
+      const response = await fetch(`${GATEWAY_URL}/api/my-files/${file.id}/download`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error("Download failed");
@@ -680,7 +681,7 @@ function Checkout({ cart, setCart, navigate, authToken }) {
     setProcessing(true);
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     try {
-      const response = await fetch("/api/commerce/orders", {
+      const response = await fetch(`${GATEWAY_URL}/api/commerce/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
         body: JSON.stringify({ items: cart, total }),
@@ -786,7 +787,7 @@ function ObservabilityStrip({ currentPath }) {
 
     async function request(path) {
       try {
-        const response = await fetch(`/api/observability${path}`, {
+        const response = await fetch(`${GATEWAY_URL}/api/observability${path}`, {
           cache: "no-store",
         });
         if (response.ok) return response;

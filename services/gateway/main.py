@@ -1,16 +1,27 @@
 import os
 import httpx
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from common import event
 
 app = FastAPI(title="3S API Gateway")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://threes-frontend.onrender.com",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 ROUTES = {
-    "auth": os.getenv("AUTH_URL", "http://auth:8001"),
-    "commerce": os.getenv("COMMERCE_URL", "http://commerce:8002"),
-    "content": os.getenv("CONTENT_URL", "http://content:8003"),
+    "auth": os.getenv("AUTH_URL", "https://threes-auth.onrender.com"),
+    "commerce": os.getenv("COMMERCE_URL", "https://threes-commerce.onrender.com"),
+    "content": os.getenv("CONTENT_URL", "https://threes-content.onrender.com"),
     "observability": os.getenv("OBSERVABILITY_URL", "https://threes-observability.onrender.com"),
-    "files": os.getenv("FILES_URL", "http://files:8005"),
+    "files": os.getenv("FILES_URL", "https://threes-files.onrender.com"),
 }
 
 @app.get("/health")
@@ -102,7 +113,7 @@ async def platform_health():
     async with httpx.AsyncClient() as client:
         for name, url in ROUTES.items():
             try:
-                response = await client.get(f"{url}/health", timeout=8.0)
+                response = await client.get(f"{url}/health", timeout=1.2)
                 result[name] = "online" if response.status_code == 200 else "degraded"
             except Exception:
                 result[name] = "offline"
